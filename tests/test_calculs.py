@@ -126,5 +126,25 @@ class Meteo(unittest.TestCase):
         self.assertTrue(any("impact qualifié" in r["constat"] for r in remarques))
 
 
+class EvolutionRisques(unittest.TestCase):
+    def test_evolution_par_rapport_a_la_derniere_session(self):
+        avant = [{"id": 1, "probabilite": 2, "impact": 2, "etat": "ouvert"},
+                 {"id": 2, "probabilite": 3, "impact": 3, "etat": "ouvert"},
+                 {"id": 3, "probabilite": 1, "impact": 2, "etat": "ouvert"},
+                 {"id": 4, "probabilite": 2, "impact": 2, "etat": "ouvert"}]
+        photo = calculs.instantane(avant)
+        apres = [{"id": 1, "probabilite": 3, "impact": 2, "etat": "ouvert"},
+                 {"id": 2, "probabilite": 2, "impact": 3, "etat": "ouvert"},
+                 {"id": 3, "probabilite": 1, "impact": 2, "etat": "ouvert"},
+                 {"id": 4, "probabilite": 2, "impact": 2, "etat": "clos"},
+                 {"id": 5, "probabilite": 1, "impact": 1, "etat": "ouvert"}]
+        evo = {r["id"]: r["evolution_session"] for r in calculs.evolution(apres, photo)}
+        self.assertEqual(evo, {1: "hausse", 2: "baisse", 3: "stable", 4: "clos", 5: "nouveau"})
+
+    def test_sans_session_precedente(self):
+        r = calculs.evolution([{"id": 1, "probabilite": 2, "impact": 2, "evolution": "hausse"}], None)
+        self.assertEqual((r[0]["evolution_session"], r[0]["evolution_source"]), ("hausse", "saisie"))
+
+
 if __name__ == "__main__":
     unittest.main()

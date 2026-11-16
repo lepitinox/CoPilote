@@ -14,8 +14,22 @@ TABLES = {
         "objectif_business": "TEXT", "objectif_solution": "TEXT", "objectif_projet": "TEXT",
         "porteur_business": "TEXT", "porteur_solution": "TEXT", "porteur_projet": "TEXT",
         "hypotheses": "TEXT", "date_cible": "TEXT", "duree_sprint_jours": "INTEGER",
-        "seuils": "TEXT",
+        "seuils": "TEXT", "raci_roles": "TEXT",
     },
+    # Cadre de la mission
+    "lot": {"nom": "TEXT", "titre": "TEXT", "periode": "TEXT", "date": "TEXT",
+            "statut": "TEXT", "rang": "INTEGER"},
+    # axe : contenu | prerequis | pour_qui | comment | quoi | fonctionnalite
+    "lot_element": {"lot": "TEXT", "axe": "TEXT", "libelle": "TEXT", "detail": "TEXT"},
+    "story": {"etape": "TEXT", "rang_etape": "INTEGER", "libelle": "TEXT", "lot": "TEXT",
+              "irritant": "INTEGER", "innovation": "INTEGER"},
+    "activite": {"piste": "TEXT", "libelle": "TEXT", "debut": "TEXT", "fin": "TEXT"},
+    "acteur": {"nom": "TEXT", "role": "TEXT", "cercle": "TEXT", "entite": "TEXT",
+               "adherence": "TEXT"},
+    "instance": {"nom": "TEXT", "chantier": "TEXT", "objectifs": "TEXT",
+                 "participants": "TEXT", "frequence": "TEXT", "duree": "TEXT",
+                 "rang": "INTEGER"},
+    "raci": {"domaine": "TEXT", "activite": "TEXT", "valeurs": "TEXT", "rang": "INTEGER"},
     "jalon": {"libelle": "TEXT", "date": "TEXT", "version": "TEXT", "statut": "TEXT"},
     "livrable": {
         "chantier": "TEXT", "libelle": "TEXT", "avancement": "INTEGER",
@@ -45,6 +59,7 @@ TABLES = {
         "semaine": "TEXT", "cree_le": "TEXT", "contenu": "TEXT",
         "tendance_calculee": "TEXT", "tendance": "TEXT", "motif_derogation": "TEXT",
         "alertes": "TEXT", "remarques": "TEXT", "statut": "TEXT", "source": "TEXT",
+        "risques_instantane": "TEXT",
     },
 }
 
@@ -52,6 +67,9 @@ ORDRE = {
     "jalon": "date", "livrable": "chantier, id", "sprint": "numero",
     "risque": "probabilite * impact DESC, id", "decision": "echeance, id",
     "compte_rendu": "date DESC, id DESC", "proposition": "id", "meteo": "id DESC",
+    "lot": "rang, id", "lot_element": "id", "story": "rang_etape, id",
+    "activite": "debut, id", "acteur": "cercle, entite, id", "instance": "rang, id",
+    "raci": "rang, id",
 }
 
 
@@ -66,6 +84,11 @@ def initialiser():
         for table, cols in TABLES.items():
             defs = ", ".join(f"{n} {t}" for n, t in cols.items())
             c.execute(f"CREATE TABLE IF NOT EXISTS {table} (id INTEGER PRIMARY KEY, {defs})")
+            # Bases créées par une version antérieure : ajouter les colonnes manquantes.
+            presentes = {r["name"] for r in c.execute(f"PRAGMA table_info({table})")}
+            for n, t in cols.items():
+                if n not in presentes:
+                    c.execute(f"ALTER TABLE {table} ADD COLUMN {n} {t}")
         if not c.execute("SELECT 1 FROM mission WHERE id = 1").fetchone():
             c.execute(
                 "INSERT INTO mission (id, nom, duree_sprint_jours, seuils) VALUES (1, ?, 14, ?)",
@@ -129,8 +152,9 @@ def supprimer(table, ident):
 
 def mission():
     m = lire("mission", 1)
-    try:
-        m["seuils"] = json.loads(m.get("seuils") or "{}")
-    except ValueError:
-        m["seuils"] = {}
+    for cle, defaut in (("seuils", {}), ("raci_roles", [])):
+        try:
+            m[cle] = json.loads(m.get(cle) or "null") or defaut
+        except ValueError:
+            m[cle] = defaut
     return m

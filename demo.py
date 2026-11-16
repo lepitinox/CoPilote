@@ -3,6 +3,7 @@ import datetime as dt
 import json
 
 import db
+import demo_cadre
 
 
 def charger(aujourdhui=None):
@@ -105,3 +106,4 @@ def charger(aujourdhui=None):
             "demande au prochain comité sponsor plutôt que de l'intégrer au sprint.\n"
         ),
     })
+    demo_cadre.charger(j)

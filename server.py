@@ -16,8 +16,11 @@ import llm  # noqa: E402
 import meteo  # noqa: E402
 
 PORT = int(os.environ.get("COPILOTE_PORT", "8765"))
-PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "index.html")
-EDITABLES = {"jalon", "livrable", "sprint", "risque", "decision", "compte_rendu"}
+STATIQUE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+PAGE = os.path.join(STATIQUE, "index.html")
+TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8"}
+EDITABLES = {"jalon", "livrable", "sprint", "risque", "decision", "compte_rendu",
+             "lot", "lot_element", "story", "activite", "acteur", "instance", "raci"}
 LISIBLES = EDITABLES | {"proposition", "meteo"}
 TENDANCES = ("vert", "orange", "rouge")
 
@@ -47,6 +50,23 @@ def synthese():
         "risques_ouverts": len(d["risques_ouverts"]),
         "decisions_a_prendre": len(d["decisions_a_prendre"]),
     }
+
+
+def suivi_risques():
+    """Registre avec l'évolution depuis la dernière session (dernière météo générée)."""
+    reference, photo = None, None
+    meteos = db.lister("meteo")  # la plus récente d'abord
+    auj = aujourdhui().isoformat()
+    # Une météo générée aujourd'hui décrit la session en cours, pas la précédente.
+    for m in [x for x in meteos if (x.get("cree_le") or "") < auj] or meteos:
+        try:
+            photo = json.loads(m.get("risques_instantane") or "null")
+        except ValueError:
+            photo = None
+        if photo is not None:
+            reference = {"semaine": m["semaine"], "date": m["cree_le"]}
+            break
+    return {"reference": reference, "risques": calculs.evolution(db.lister("risque"), photo)}
 
 
 def extraire(cr_id):
@@ -134,6 +154,8 @@ def generer_meteo():
         "tendance_calculee": d["tendance_calculee"], "tendance": d["tendance_calculee"],
         "motif_derogation": "", "alertes": json.dumps(d["alertes"], ensure_ascii=False),
         "remarques": "[]", "statut": "brouillon", "source": source,
+        # Photo du registre : sert à calculer l'évolution des risques d'une session à l'autre.
+        "risques_instantane": json.dumps(calculs.instantane(db.lister("risque"))),
     })
     return {"meteo": m, "avertissement": avertissement}
 
@@ -230,11 +252,18 @@ class Requete(BaseHTTPRequestHandler):
             self._json({"erreur": f"Erreur interne : {e}"}, 500)
 
     def _router(self, methode, chemin):
-        if methode == "GET" and chemin in ("/", "/index.html"):
-            with open(PAGE, "rb") as f:
+        statique = re.fullmatch(r"/static/([\w-]+)(\.js|\.css)", chemin)
+        if methode == "GET" and (chemin in ("/", "/index.html") or statique):
+            fichier, genre = PAGE, "text/html; charset=utf-8"
+            if statique:  # nom sans séparateur de chemin : on ne sort pas du dossier static
+                fichier = os.path.join(STATIQUE, statique.group(1) + statique.group(2))
+                genre = TYPES[statique.group(2)]
+                if not os.path.isfile(fichier):
+                    raise Erreur("Fichier introuvable.", 404)
+            with open(fichier, "rb") as f:
                 corps = f.read()
             self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Type", genre)
             self.send_header("Content-Length", str(len(corps)))
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
@@ -253,6 +282,8 @@ class Requete(BaseHTTPRequestHandler):
                 return db.mission()
             if nom == "synthese":
                 return synthese()
+            if nom == "suivi_risques":
+                return suivi_risques()
             if nom in LISIBLES:
                 return db.lister(nom)
         if methode == "POST":
@@ -279,8 +310,9 @@ class Requete(BaseHTTPRequestHandler):
         if methode == "PUT":
             if nom == "mission" and not ident:
                 corps = self._corps()
-                if isinstance(corps.get("seuils"), dict):
-                    corps["seuils"] = json.dumps(corps["seuils"])
+                for cle in ("seuils", "raci_roles"):
+                    if isinstance(corps.get(cle), (dict, list)):
+                        corps[cle] = json.dumps(corps[cle], ensure_ascii=False)
                 db.modifier("mission", 1, corps)
                 return db.mission()
             if nom == "meteo" and ident and not action:

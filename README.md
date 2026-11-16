@@ -38,9 +38,25 @@ du modèle validé (décision D3 de la note de cadrage).
 | `calculs.py` | KPI, atterrissage, déclencheurs, contrôles — déterministe, sans LLM |
 | `meteo.py` | Assemblage de la météo hebdomadaire |
 | `llm.py` | Les trois fonctions LLM (extraire, rédiger, challenger) ; seul point d'accès au modèle |
-| `demo.py` | Mission de démonstration fictive |
-| `static/index.html` | Interface |
+| `demo.py`, `demo_cadre.py` | Mission de démonstration fictive |
+| `static/index.html` | Page et styles |
+| `static/app.js` | Socle de l'interface : formulaires, navigation |
+| `static/cadre.js` | Vues du cadre : feuille de route, lotissement, story map, macro-planning, organisation, gouvernance, sprint et KPI, RACI |
+| `static/pilotage.js` | Vues de pilotage : synthèse, suivi des risques, décisions, météo, saisies |
+| `static/graphes.js` | Indicateurs en graphiques |
 | `tests/test_calculs.py` | Tests des calculs : `python tests/test_calculs.py` |
+
+## Vues
+
+**Cadre de la mission** : feuille de route (lots, grande temporalité, prérequis), lotissement
+détaillé (pour qui, comment, quoi, grâce à quoi), story map, macro-planning au mois,
+organisation et adhérences, gouvernance, rappel du sprint et des KPI à collecter, RACI.
+
+**Pilotage** : synthèse et alertes, indicateurs, suivi des risques, décisions et actions,
+météo hebdomadaire.
+
+L'évolution d'un risque est calculée par rapport à la dernière session, c'est-à-dire la
+dernière météo générée avant aujourd'hui : chaque météo garde une photo du registre.
 
 ## Principes tenus par le code
 

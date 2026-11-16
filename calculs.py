@@ -238,3 +238,36 @@ def controles(risques, decisions, contenu_meteo="", aujourdhui=None):
         ajouter("moyenne", "Au moins un point de vigilance n'a pas d'action associée.",
                 "Associer une action ou une demande d'arbitrage.")
     return out
+
+
+def instantane(risques):
+    """Photo du registre à un instant : criticité et état de chaque risque."""
+    return {str(r["id"]): {"criticite": _n(r.get("probabilite")) * _n(r.get("impact")),
+                           "etat": r.get("etat")} for r in risques}
+
+
+def evolution(risques, photo):
+    """Compare chaque risque à la photo de la dernière session.
+
+    Sans photo, on retombe sur l'évolution saisie à la main.
+    """
+    out = []
+    for r in risques:
+        crit = _n(r.get("probabilite")) * _n(r.get("impact"))
+        avant = (photo or {}).get(str(r["id"]))
+        if photo is None:
+            evo, source = r.get("evolution") or "stable", "saisie"
+        elif avant is None:
+            evo, source = "nouveau", "calcul"
+        elif r.get("etat") == "clos" and avant.get("etat") != "clos":
+            evo, source = "clos", "calcul"
+        elif crit > _n(avant.get("criticite")):
+            evo, source = "hausse", "calcul"
+        elif crit < _n(avant.get("criticite")):
+            evo, source = "baisse", "calcul"
+        else:
+            evo, source = "stable", "calcul"
+        out.append(dict(r, criticite=crit, evolution_session=evo, evolution_source=source,
+                        criticite_precedente=(avant or {}).get("criticite"),
+                        etat_precedent=(avant or {}).get("etat")))
+    return out
