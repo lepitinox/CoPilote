@@ -35,6 +35,7 @@ import agenda
 import calculs
 import db
 import donnees
+import finances
 
 DOSSIER = os.environ.get(
     "COPILOTE_MODELES", os.path.join(os.path.dirname(os.path.abspath(__file__)), "modeles"))
@@ -45,6 +46,7 @@ LIBELLES = {
     "sprintkpi": "Sprint et KPI", "raci": "RACI", "mission": "Fiche mission",
     "synthese": "Synthèse", "kpi": "Indicateurs", "risques": "Suivi des risques",
     "decisions": "Décisions et actions", "meteo": "Météo hebdomadaire", "sprints": "Sprints",
+    "chiffrage": "Chiffrage", "budget": "Budget", "attentes": "Attentes du client",
 }
 SANS_EXCEL = {"meteo"}
 TAILLE_MAX_MODELE = 25 * 1024 * 1024
@@ -591,6 +593,109 @@ def v_meteo(meteo_id=None):
     return diapos
 
 
+def _j(v):
+    return "" if v is None else f"{round(v, 1):g} j".replace(".", ",")
+
+
+def _alertes(alertes):
+    return tableau(["Niveau", "Alerte", "Détail"],
+                   [["Sponsor" if x["niveau"] >= 3 else "Projet", x["titre"], x["detail"]] for x in alertes],
+                   {(i, 0): _style(ROUGE if x["niveau"] >= 3 else ORANGE) for i, x in enumerate(alertes)},
+                   [0.8, 3, 3.5])
+
+
+def v_chiffrage():
+    c = donnees.chiffrage()
+    euros = finances.euros
+    diapos = []
+    for mode, titre in (("macro", "Chiffrage macro — avant collecte"), ("detaille", "Chiffrage détaillé — après collecte")):
+        m = c["modes"][mode]
+        if not m["nb"]:
+            continue
+        t = m["total_jours"]
+        tu = tuiles([("Charge de base", _j(m["base"]["retenu"]), f"{_j(m['base']['bas'])} à {_j(m['base']['haut'])}"),
+                     (f"Majorations (+{round(c['taux_majoration'] * 100)} %)", _j(t["retenu"] - m["base"]["retenu"]), ""),
+                     ("Charge totale", _j(t["retenu"]), f"{_j(t['bas'])} à {_j(t['haut'])}"),
+                     ("Montant", euros(m["montant"]), f"{euros(m['montant_bas'])} à {euros(m['montant_haut'])}")])
+        if mode == "macro":
+            entetes = ["Lot", "Élément", "Taille", "Confiance", "Bas", "Retenu", "Haut", "Montant", "Hypothèses"]
+            lignes = [[l.get("lot"), l.get("libelle"), l.get("taille"), l.get("confiance") or "moyenne", _j(l["bas"]),
+                       _j(l["retenu"]), _j(l["haut"]), euros(l["montant"]), l.get("hypothese")] for l in m["lignes"]]
+            larg = [0.6, 2.2, 0.6, 0.9, 0.7, 0.7, 0.7, 1, 2]
+        else:
+            entetes = ["Lot", "Élément", "Profil", "Bas", "Probable", "Haut", "PERT", "Montant", "Hypothèses"]
+            lignes = [[l.get("lot"), l.get("libelle"), l.get("profil"), _j(l["bas"]), _j(l.get("jours_probable")),
+                       _j(l["haut"]), _j(l["retenu"]), euros(l["montant"]), l.get("hypothese")] for l in m["lignes"]]
+            larg = [0.6, 2.2, 1.2, 0.7, 0.7, 0.7, 0.7, 1, 1.8]
+        retenu = " (retenu)" if c["parametres"]["mode_retenu"] == mode else ""
+        diapos.append(diapo(titre + retenu, tu, tableau(entetes, lignes, None, larg, taille=9)))
+    if c["modes"]["macro"]["nb"] and c["modes"]["detaille"]["nb"]:
+        comp = c["comparaison"]
+        diapos.append(diapo("Chiffrage — macro et détaillé par lot", tableau(
+            ["Lot", "Macro", "Détaillé", "Écart"],
+            [[l["lot"], _j(l["macro"]), _j(l["detaille"]) if l["detaille"] else "non détaillé",
+              "" if l["ecart"] is None else f"{'+' if l['ecart'] > 0 else ''}{round(l['ecart'] * 100)} %"] for l in comp],
+            {(i, 3): _style(ORANGE if abs(l["ecart"]) > 0.2 else VERT) for i, l in enumerate(comp) if l["ecart"] is not None},
+            [1, 1.5, 1.5, 1.2]), sous="Charge de base, hors majorations"))
+    return diapos or [diapo("Chiffrage", texte(["Aucun élément chiffré."]))]
+
+
+def v_budget(aujourdhui=None):
+    b = donnees.budget(aujourdhui)
+    euros = finances.euros
+    tu = tuiles([("Budget vendu" if b["reference_source"] == "vendu" else "Budget chiffré", euros(b["reference"]), ""),
+                 ("Consommé", euros(b["consomme"]), f"{round((b['taux_consomme'] or 0) * 100)} % du budget"),
+                 ("Reste à faire", euros(b["raf"]), ""),
+                 ("Atterrissage", euros(b["atterrissage"]),
+                  "" if b["ecart"] is None else ("Dépassement " if b["ecart"] < 0 else "Marge ") + euros(abs(b["ecart"]))),
+                 ("Marge prévue", euros(b["marge"]), "" if b["taux_marge"] is None else f"{round(b['taux_marge'] * 100)} %"),
+                 ("Facturé", euros(b["facture"]), f"payé {euros(b['paye'])}")])
+    diapos = [diapo("Budget", tu, _alertes(b["alertes"]) if b["alertes"] else texte(["Aucun déclencheur atteint."]))]
+    if b["par_mois"]:
+        cat = [x["mois"] for x in b["par_mois"]]
+        series = [("Cumul consommé", [x["cumul"] for x in b["par_mois"]], SERIE_1)]
+        if b["reference"]:
+            series.append(("Budget", [b["reference"]] * len(cat), DOUX))
+        diapos.append(diapo("Budget — consommation", graphe("Consommé cumulé (€)", "ligne", cat, series, pointilles=["Budget"])))
+    diapos.append(diapo("Budget — profils", tableau(
+        ["Profil", "TJM", "Coût / j", "Consommé", "Reste à faire", "Atterrissage", "Montant"],
+        [[p["nom"], euros(p.get("tjm")), euros(p.get("cout_journalier")), _j(p["consomme_jours"]), _j(p.get("raf_jours") or 0),
+          _j(p["atterrissage_jours"]), euros(p["atterrissage"])] for p in b["par_profil"]], None, [1.6, 0.9, 0.9, 1, 1, 1, 1.1])))
+    factures = db.lister("facture")
+    auj = (aujourdhui or dt.date.today()).isoformat()
+    diapos.append(diapo("Budget — échéancier de facturation", tableau(
+        ["Échéance", "Jalon", "Date prévue", "Montant", "Statut"],
+        [[f.get("libelle"), f.get("jalon"), fr(f.get("date_prevue")), euros(f.get("montant")), f.get("statut")] for f in factures],
+        {(i, 4): _style(VERT if f.get("statut") == "payée" else ROUGE if (f.get("statut") or "à facturer") == "à facturer"
+                        and (f.get("date_prevue") or "9") < auj else ORANGE) for i, f in enumerate(factures)},
+        [2.4, 2, 1, 1, 1])))
+    return diapos
+
+
+def v_attentes(aujourdhui=None):
+    a = donnees.suivi_attentes(aujourdhui)
+    liste = sorted(a["attentes"], key=lambda x: (x.get("partie_prenante") or "", x.get("priorite") or 9))
+    if not liste:
+        return [diapo("Attentes du client", texte(["Aucune attente suivie."]))]
+    evo = {"hausse": " ↗", "baisse": " ↘", "stable": " →"}
+    lignes, styles = [], {}
+    for i, x in enumerate(liste):
+        s = x.get("satisfaction")
+        lignes.append([x.get("partie_prenante"), x.get("libelle"), x.get("categorie"),
+                       f"P{x['priorite']}" if x.get("priorite") else "",
+                       (f"{s} / 5" + evo.get(x.get("evolution"), "")) if s is not None else "", x.get("position"),
+                       " → ".join(v for v in (x.get("reponse"), x.get("prochaine_action")) if v), fr(x.get("echeance"))])
+        if isinstance(s, int):
+            styles[(i, 4)] = _style(ROUGE if s <= 2 else ORANGE if s == 3 else VERT)
+        styles[(i, 5)] = _style({"alignée": VERT, "à recadrer": ORANGE}.get(x.get("position"), ("EEF0F3", DOUX)))
+    diapos = [diapo("Attentes du client", tableau(
+        ["Partie prenante", "Attente", "Catégorie", "Priorité", "Satisfaction", "Position", "Notre réponse", "Échéance"],
+        lignes, styles, [1.2, 2.2, 0.9, 0.6, 0.9, 0.9, 2.4, 0.9], taille=9))]
+    if a["alertes"]:
+        diapos.append(diapo("Attentes du client — alertes", _alertes(a["alertes"])))
+    return diapos
+
+
 def construire(vue, meteo_id=None, aujourdhui=None):
     if vue not in LIBELLES:
         raise ErreurExport("Vue inconnue.")
@@ -601,6 +706,8 @@ def construire(vue, meteo_id=None, aujourdhui=None):
         "mission": v_mission, "synthese": lambda: v_synthese(aujourdhui), "kpi": v_kpi,
         "risques": lambda: v_risques(aujourdhui), "decisions": lambda: v_decisions(aujourdhui),
         "meteo": lambda: v_meteo(meteo_id), "sprints": v_sprints,
+        "chiffrage": v_chiffrage, "budget": lambda: v_budget(aujourdhui),
+        "attentes": lambda: v_attentes(aujourdhui),
     }
     return fonctions[vue]()
 

@@ -14,7 +14,9 @@ pip install -r requirements.txt
 python server.py
 ```
 
-Puis ouvrir http://127.0.0.1:8765 et cliquer sur « Charger la démo » (mission fictive).
+Puis ouvrir http://127.0.0.1:8765. Le bouton « Missions » crée, importe, exporte ou met à la
+corbeille une mission ; « Charger la démo » y ouvre une mission fictive, dans sa propre mission
+`demo`.
 Le serveur n'écoute que sur la machine locale.
 
 `python-pptx` et `openpyxl` servent aux exports ; `anthropic` aux fonctions LLM. Sans clé
@@ -23,9 +25,13 @@ factuel, et l'extraction des comptes rendus est indisponible.
 
 ## Où sont les données
 
-- **La mission** : un fichier SQLite, `copilote.db`, à côté de `server.py` (autre emplacement
-  avec la variable `COPILOTE_DB`). Une base = une mission. Pour sauvegarder ou transmettre une
-  mission, copier ce fichier ; « Charger la démo » l'écrase.
+- **Les missions** : un fichier SQLite par mission dans le dossier `missions/` à côté de
+  `server.py` (autre emplacement avec `COPILOTE_MISSIONS`). Chaque onglet du navigateur garde sa
+  mission ouverte. Une mission mise à la corbeille est déplacée dans `missions/corbeille/`.
+  Une ancienne base `copilote.db` est reprise automatiquement comme première mission (l'original
+  est gardé sous `copilote.db.avant-multi-missions`).
+- **L'export d'une mission** : un fichier JSON lisible (`format: copilote-mission`, toutes les
+  tables et l'historique). Il se réimporte comme nouvelle mission, sans jamais en écraser une.
 - **Les modèles d'export** : le dossier `modeles/` (autre emplacement avec `COPILOTE_MODELES`).
 
 Les deux sont exclus du dépôt Git : ils contiennent des données de mission.
@@ -45,8 +51,12 @@ du modèle validé (décision D3 de la note de cadrage).
 détaillé (pour qui, comment, quoi, grâce à quoi), story map, macro-planning au mois,
 organisation et adhérences, gouvernance, rappel du sprint et des KPI à collecter, RACI.
 
-**Pilotage** : synthèse et alertes, indicateurs, suivi des risques, décisions et actions,
-météo hebdomadaire.
+**Pilotage** : synthèse et alertes, indicateurs, suivi des risques, attentes du client,
+décisions et actions, météo hebdomadaire.
+
+**Finances** : chiffrage, budget.
+
+**Saisie** : sprints, comptes rendus, historique des modifications.
 
 L'évolution d'un risque est calculée par rapport à la dernière session, c'est-à-dire la
 dernière météo générée avant aujourd'hui : chaque météo garde une photo du registre.
@@ -65,6 +75,46 @@ récurrence, un créneau et une durée. « Proposer des créneaux » les pose à
 sprints, sans chevauchement sur huit semaines, hors week-end et hors pause de midi.
 « Télécharger les invitations » produit un fichier `.ics` (séries récurrentes, participants
 ayant un e-mail) à importer dans Outlook ou Google Agenda, d'où l'on envoie les invitations.
+
+### Historique des modifications
+
+Chaque création, modification et suppression est inscrite avec l'état avant et après et son
+origine (saisie, proposition acceptée, créneaux proposés, annulation…). « Annuler » défait une
+entrée si l'élément n'a pas changé depuis ; l'annulation est elle-même inscrite. Les
+chargements en masse (démo, import) ne sont pas inscrits, sauf une ligne « import ».
+
+### Chiffrage
+
+Deux modes qui coexistent :
+
+- **Macro**, quand on sait peu de choses : chaque élément reçoit une taille (XS à XL), convertie
+  en jours par un abaque, et une confiance qui donne la fourchette (± 15, 30 ou 50 %), valorisée
+  au TJM moyen.
+- **Détaillé**, après la collecte d'informations : charge basse, probable et haute par profil,
+  combinée en estimation PERT et valorisée au TJM du profil. « Initialiser depuis le macro »
+  reprend les éléments du macro comme point de départ.
+
+Les majorations (pilotage, qualité, contingence) s'appliquent aux deux. Une comparaison par lot
+montre l'écart entre les deux modes. Le mode retenu sert de budget de référence tant que le
+budget vendu n'est pas saisi ; « Reporter en budget vendu » le fixe.
+
+### Budget
+
+Profils avec TJM de vente, coût journalier et reste à faire en jours ; temps consommés par mois
+et par profil ; dépenses hors temps passé ; échéancier de facturation. Calculés : consommé,
+reste à faire, atterrissage et écart au budget, marge prévue, facturé et payé. Déclencheurs :
+dépassement prévu (sponsor), consommation en avance de plus de 10 points sur l'avancement moyen
+des livrables, échéance de facturation dépassée, temps passé sur un profil sans TJM.
+
+### Attentes du client
+
+Par partie prenante : l'attente, sa catégorie et sa priorité, la satisfaction perçue (1 à 5), la
+position (alignée, à recadrer, hors périmètre), notre réponse et la prochaine action. L'évolution
+de la satisfaction est tirée de l'historique. Déclencheurs : attente prioritaire insatisfaite
+(sponsor), attente à recadrer sans action, échéance dépassée ; revue à refaire après 30 jours.
+
+Les déclencheurs du budget et des attentes s'ajoutent à ceux de la livraison dans la synthèse
+et la météo.
 
 ### Exports PowerPoint et Excel
 
@@ -87,8 +137,9 @@ modèle par défaut.
 | Fichier | Rôle |
 |---|---|
 | `server.py` | Serveur HTTP local et routes de l'API |
-| `db.py` | Modèle de données et stockage SQLite |
+| `db.py` | Modèle de données, un fichier SQLite par mission, historique, export et import JSON |
 | `calculs.py` | KPI, atterrissage, déclencheurs, contrôles — déterministe, sans LLM |
+| `finances.py` | Chiffrage en deux modes, budget, attentes du client — déterministe, sans LLM |
 | `donnees.py` | Données composées partagées par l'API et les exports |
 | `meteo.py` | Assemblage de la météo hebdomadaire |
 | `agenda.py` | Créneaux des réunions, calendrier type d'un sprint, invitations `.ics` |
@@ -100,7 +151,8 @@ modèle par défaut.
 | `static/cadre.js` | Vues du cadre : feuille de route, lotissement, story map, macro-planning, organisation, gouvernance, sprint et KPI, RACI |
 | `static/pilotage.js` | Vues de pilotage : synthèse, suivi des risques, décisions, météo, saisies |
 | `static/graphes.js` | Indicateurs en graphiques |
-| `tests/` | `python tests/test_calculs.py` et `python tests/test_agenda_exports.py` |
+| `static/finances.js` | Chiffrage, budget, attentes du client |
+| `tests/` | `test_calculs.py`, `test_agenda_exports.py`, `test_missions.py`, `test_finances.py` (chacun : `python tests/<fichier>`) |
 
 ## Principes tenus par le code
 
@@ -115,8 +167,9 @@ modèle par défaut.
 ## Limites connues
 
 - Les fonctions LLM n'ont pas encore été exécutées contre l'API.
-- Une seule mission par base ; pas d'export ni d'import de mission en un fichier lisible.
+- L'historique n'enregistre pas l'auteur (pas d'authentification) : seulement l'origine.
+- Le chiffrage et le budget sont en euros hors taxes, sans gestion de devises ni de TVA.
 - Les invitations sont en heure locale flottante (sans fuseau) ; un modèle Excel ne reporte
   pas ses images sur les onglets ajoutés (seul le premier onglet les garde).
 - Pas d'authentification, pas de masquage des noms avant envoi au modèle.
-- Pas de budget, pas de multi-missions, pas de connecteur.
+- Pas de connecteur (temps passés, facturation et agenda se saisissent à la main).

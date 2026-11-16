@@ -6,7 +6,16 @@ VUES.synthese = ["Synthèse", PILOTAGE, async v => {
   const s = await api("GET", "synthese"), k = s.kpi, a = s.atterrissage;
   v.append(titreVue("Synthèse — " + s.semaine,
     "La trajectoire reste-t-elle crédible, qu'est-ce qui la menace, quelle décision faut-il faire prendre ? Tous les chiffres sont calculés à partir des données saisies."));
-  if (!k) { v.append(el("div", { class: "vide" }, "Aucun sprint saisi. Renseignez la mission et les sprints, ou chargez la démo.")); return; }
+  const bu = s.budget, at = s.attentes;
+  const tuilesEngagements = el("div", { class: "grille", style: "margin-top:12px" },
+    tuile("Atterrissage budgétaire", euros(bu.atterrissage), bu.reference == null ? "Aucun budget de référence"
+      : [pastille(bu.ecart < 0 ? "rouge" : "vert", (bu.ecart < 0 ? "Dépassement " : "Marge ") + euros(Math.abs(bu.ecart))), ` sur ${euros(bu.reference)}`]),
+    tuile("Budget consommé", pourcent(bu.taux_consomme), euros(bu.consomme)),
+    tuile("Attentes du client", nb(at.total), `${at.insatisfaites} insatisfaite(s) · ${at.a_recadrer} à recadrer`));
+  if (!k) {
+    v.append(el("div", { class: "grille" }, tuile("Tendance calculée", tendance(s.tendance), `${s.alertes.length} alerte(s) active(s)`)),
+      tuilesEngagements, el("p", { class: "aide", style: "margin-top:12px" }, "Aucun sprint saisi : les indicateurs de livraison ne sont pas calculés."));
+  } else {
   let fin = "Non calculable", note = "Le backlog ne se vide pas assez vite";
   if (a.atteignable) {
     fin = dateFr(a.date_fin_estimee);
@@ -19,7 +28,8 @@ VUES.synthese = ["Synthèse", PILOTAGE, async v => {
     tuile(`Sprint ${k.sprint} : réalisé / prévu`, `${nb(k.realise)} / ${nb(k.prevu)}`, pct(k.taux_realisation)),
     tuile("Reste à faire", nb(k.reste) + " pts", `Consommation nette : ${nb(a.consommation_nette)} pts par sprint`),
     tuile("Points ajoutés", nb(k.ajoute), `Moyenne : ${nb(k.ajout_moyen)} · marge : ${nb(s.seuils.marge_ajout)}`),
-    tuile("Moral", k.moral ? k.moral + " / 5" : "—", `Anomalies : ${k.anomalies_creees} créées, ${k.anomalies_corrigees} corrigées`)));
+    tuile("Moral", k.moral ? k.moral + " / 5" : "—", `Anomalies : ${k.anomalies_creees} créées, ${k.anomalies_corrigees} corrigées`)), tuilesEngagements);
+  }
   v.append(el("h3", {}, "Alertes"));
   v.append(s.alertes.length ? el("div", { class: "liste" }, s.alertes.map(x => el("div", { class: "item" },
     el("div", { class: "tete" }, pastille(x.niveau >= 3 ? "rouge" : "orange", x.niveau >= 3 ? "Niveau 3 — sponsor" : "Niveau 2 — projet"),
@@ -252,3 +262,46 @@ function telecharger(m) {
     download: "meteo-" + m.cree_le + ".md" });
   a.click(); URL.revokeObjectURL(a.href);
 }
+
+// ---------- Historique des modifications ----------
+const ACTIONS_HIST = { creation: ["Création", "vert"], modification: ["Modification", "neutre"],
+  suppression: ["Suppression", "rouge"], import: ["Import", "orange"] };
+const NOMS_TABLES = { mission: "fiche mission", meteo: "météo", proposition: "proposition", journal: "historique" };
+const nomTable = t => ENTITES[t]?.nom || NOMS_TABLES[t] || t;
+const libelleChamp = (t, k) => (ENTITES[t]?.champs.find(c => c[0] === k) || [k, k])[1];
+const resume = l => (l ? l.titre || l.libelle || l.nom || l.activite || l.semaine || `n° ${l.id}` : "");
+const court = v => { const s = v == null || v === "" ? "∅" : String(v); return s.length > 90 ? s.slice(0, 90) + "…" : s; };
+VUES.historique = ["Historique", SAISIE, async v => {
+  const filtre = etat.histoCible || "";
+  const entrees = await api("GET", "journal?limite=300" + (filtre ? "&cible=" + filtre : ""));
+  const choix = el("select", { style: "width:auto", "aria-label": "Type d'élément", onchange: e => { etat.histoCible = e.target.value; recharger(); } },
+    el("option", { value: "" }, "Tous les éléments"),
+    ["mission", ...Object.keys(ENTITES), "meteo", "proposition"].map(t => el("option", { value: t, selected: t === filtre }, nomTable(t))));
+  v.append(titreVue("Historique des modifications",
+    "Chaque création, modification et suppression, avec l'état avant et après. « Annuler » défait une modification si l'élément n'a pas changé depuis ; l'annulation est elle-même inscrite ici.", choix));
+  if (!entrees.length) { v.append(el("div", { class: "vide" }, "Aucune modification enregistrée.")); return; }
+  const parJour = new Map();
+  for (const e of entrees) { const j = e.horodatage.slice(0, 10); if (!parJour.has(j)) parJour.set(j, []); parJour.get(j).push(e); }
+  for (const [j, liste] of parJour) {
+    v.append(el("h3", {}, dateFr(j)), el("div", { class: "liste" }, liste.map(e => {
+      const [lib, classe] = ACTIONS_HIST[e.action] || [e.action, "neutre"];
+      const diff = e.action === "modification"
+        ? Object.keys(e.apres || {}).filter(k => JSON.stringify(e.apres[k]) !== JSON.stringify((e.avant || {})[k]))
+        : [];
+      return el("div", { class: "item", style: e.annule_par ? "opacity:.6" : null },
+        el("div", { class: "tete" },
+          el("span", { style: "color:var(--doux);font-variant-numeric:tabular-nums" }, e.horodatage.slice(11, 16)),
+          pastille(classe, lib), el("span", {}, nomTable(e.cible)),
+          el("span", { class: "titre" }, resume(e.apres || e.avant)),
+          el("span", { class: "pousse", style: "margin-left:auto;color:var(--doux);font-size:13px" }, e.origine || ""),
+          e.annule_par ? pastille("neutre", "Annulée")
+            : ["creation", "modification", "suppression"].includes(e.action) && el("button", { onclick: async ev => {
+                await pendant(ev.target, "…", async () => { await api("POST", `journal/${e.id}/annuler`); dire("Modification annulée."); await recharger(); });
+              } }, "Annuler")),
+        diff.length ? el("ul", { style: "margin:6px 0 0;padding-left:18px;font-size:13.5px;color:var(--doux)" },
+          diff.map(k => el("li", {}, el("b", { style: "color:var(--texte)" }, libelleChamp(e.cible, k)), " : ",
+            court(e.avant?.[k]), " → ", court(e.apres[k])))) : null);
+    })));
+  }
+  if (entrees.length >= 300) v.append(el("p", { class: "aide", style: "margin-top:12px" }, "Seules les 300 dernières entrées sont affichées ; filtrez par type d'élément pour remonter plus loin."));
+}];

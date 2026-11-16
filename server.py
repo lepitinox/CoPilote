@@ -15,6 +15,7 @@ import db  # noqa: E402
 import demo  # noqa: E402
 import donnees  # noqa: E402
 import exports  # noqa: E402
+import finances  # noqa: E402
 import llm  # noqa: E402
 import meteo  # noqa: E402
 
@@ -23,9 +24,11 @@ STATIQUE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 PAGE = os.path.join(STATIQUE, "index.html")
 TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8"}
 EDITABLES = {"jalon", "livrable", "sprint", "risque", "decision", "compte_rendu",
-             "lot", "lot_element", "story", "activite", "acteur", "instance", "raci", "metier"}
+             "lot", "lot_element", "story", "activite", "acteur", "instance", "raci", "metier",
+             "estimation", "profil", "consommation", "depense", "facture", "attente"}
 LISIBLES = EDITABLES | {"proposition", "meteo"}
 TENDANCES = ("vert", "orange", "rouge")
+TAILLE_MAX_IMPORT = 50 * 1024 * 1024
 
 
 class Erreur(Exception):
@@ -135,8 +138,24 @@ def accepter(prop_id):
     return db.modifier("proposition", prop_id, {"statut": "acceptée"})
 
 
+def detailler_depuis_macro():
+    """Point de départ du chiffrage détaillé : une ligne par élément du macro, à affiner."""
+    if any(e.get("mode") == "detaille" for e in db.lister("estimation")):
+        raise Erreur("Le chiffrage détaillé a déjà des lignes : complétez-le plutôt que de le réinitialiser.", 409)
+    c = donnees.chiffrage()
+    lignes = c["modes"]["macro"]["lignes"]
+    if not lignes:
+        raise Erreur("Le chiffrage macro est vide.")
+    for l in lignes:
+        db.creer("estimation", {
+            "mode": "detaille", "lot": l.get("lot"), "libelle": l.get("libelle"), "rang": l.get("rang"),
+            "jours_bas": l["bas"], "jours_probable": l["retenu"], "jours_haut": l["haut"],
+            "hypothese": "Repris du macro (" + (l.get("taille") or "charge saisie") + ") : à affiner par profil."})
+    return donnees.chiffrage()
+
+
 def generer_meteo():
-    d = meteo.donnees(*etat_mission(), aujourdhui())
+    d = meteo.donnees(*etat_mission(), aujourdhui(), donnees.alertes_complementaires(aujourdhui()))
     avertissement = None
     try:
         redaction, source = llm.rediger(d), "modèle"
@@ -192,7 +211,7 @@ def challenger_meteo(ident):
             "suggestion": "Vérifier que le motif de dérogation tient face aux sponsors."})
     avertissement = None
     try:
-        remarques += llm.challenger(m["contenu"], meteo.donnees(*etat, aujourdhui()),
+        remarques += llm.challenger(m["contenu"], meteo.donnees(*etat, aujourdhui(), donnees.alertes_complementaires(aujourdhui())),
                                     m["tendance"], m["motif_derogation"])
     except llm.LLMIndisponible as e:
         avertissement = f"Relecture par le modèle indisponible ({e}) : contrôles par règles seulement."
@@ -253,7 +272,13 @@ class Requete(BaseHTTPRequestHandler):
             adresse = urlparse(self.path)
             chemin = adresse.path.rstrip("/") or "/"
             self.requete = parse_qs(adresse.query)
-            resultat = self._router(methode, chemin)
+            # Mission visée : en-tête X-Mission (ou paramètre ?mission=), sinon la dernière ouverte.
+            cle = self.headers.get("X-Mission") or (self.requete.get("mission") or [""])[0]
+            if cle and chemin.startswith("/api/") and not chemin.startswith("/api/missions") \
+                    and not db.existe(cle):
+                raise Erreur("Mission introuvable : elle a peut-être été supprimée.", 404)
+            with db.dans(cle or None):
+                resultat = self._router(methode, chemin)
             if isinstance(resultat, Fichier):
                 self._fichier(resultat)
             elif resultat is not None:
@@ -262,6 +287,10 @@ class Requete(BaseHTTPRequestHandler):
             self._json({"erreur": str(e)}, 400)
         except Erreur as e:
             self._json({"erreur": str(e)}, e.code)
+        except db.Introuvable as e:
+            self._json({"erreur": str(e)}, 404)
+        except db.Conflit as e:
+            self._json({"erreur": str(e)}, 409)
         except llm.LLMIndisponible as e:
             self._json({"erreur": str(e)}, 503)
         except Exception as e:  # dernière barrière : ne jamais laisser le serveur muet
@@ -304,6 +333,8 @@ class Requete(BaseHTTPRequestHandler):
             if methode == "DELETE":
                 exports.supprimer_modele(cible, ext)
                 return exports.etat_modeles()
+        if chemin == "/api/missions" or chemin.startswith("/api/missions/"):
+            return self._missions(methode, chemin)
         m = re.fullmatch(r"/api/(\w+)(?:/(\d+))?(?:/(\w+))?", chemin)
         if not m:
             raise Erreur("Ressource inconnue.", 404)
@@ -319,11 +350,23 @@ class Requete(BaseHTTPRequestHandler):
                 return synthese()
             if nom == "suivi_risques":
                 return suivi_risques()
+            if nom == "chiffrage":
+                return donnees.chiffrage()
+            if nom == "budget":
+                return donnees.budget(aujourdhui())
+            if nom == "suivi_attentes":
+                return {**donnees.suivi_attentes(aujourdhui()), "categories": finances.CATEGORIES_ATTENTE}
             if nom == "agenda":
                 return {**agenda.calendrier(aujourdhui()), "recurrences": agenda.RECURRENCES}
             if nom == "modeles":
                 return {**exports.etat_modeles(), "libelles": exports.LIBELLES,
                         "sans_excel": sorted(exports.SANS_EXCEL)}
+            if nom == "journal":
+                q = {k: (self.requete.get(k) or [""])[0] for k in ("cible", "limite", "avant")}
+                if q["cible"] and q["cible"] not in db.TABLES:
+                    raise Erreur("Type d'élément inconnu.")
+                return db.journal(q["cible"] or None, int(q["limite"]) if q["limite"].isdigit() else 200,
+                                  int(q["avant"]) if q["avant"].isdigit() else None)
             if nom in LISIBLES and not action:
                 return db.lister(nom)
         if methode == "GET" and nom == "instance" and action == "ics":
@@ -336,20 +379,36 @@ class Requete(BaseHTTPRequestHandler):
             return Fichier(agenda.ics(liste, aujourdhui()), GENRES["ics"], f"{nom_fichier}.ics")
         if methode == "POST":
             if nom == "demo" and not ident:
-                demo.charger(aujourdhui())
-                return {"ok": True}
+                # La démonstration a sa propre mission : elle n'écrase jamais une mission réelle.
+                if not db.existe("demo"):
+                    db.creer_mission("demo")
+                with db.dans("demo"):
+                    demo.charger(aujourdhui())
+                db.marquer_derniere("demo")
+                return {"cle": "demo"}
+            if nom == "estimation" and not ident and action == "depuis_macro":
+                with db.origine("détaillé initialisé depuis le macro"):
+                    return detailler_depuis_macro()
+            if nom == "journal" and ident and action == "annuler":
+                return {"element": db.annuler(ident)}  # None si l'annulation a supprimé l'élément
             if nom == "compte_rendu" and ident and action == "extraire":
-                return extraire(ident)
+                with db.origine("extraction du compte rendu"):
+                    return extraire(ident)
             if nom == "proposition" and ident and action == "accepter":
-                return accepter(ident)
+                with db.origine("proposition acceptée"):
+                    return accepter(ident)
             if nom == "proposition" and ident and action == "rejeter":
-                return db.modifier("proposition", ident, {"statut": "rejetée"})
+                with db.origine("proposition rejetée"):
+                    return db.modifier("proposition", ident, {"statut": "rejetée"})
             if nom == "meteo" and action is None and ident is None:
-                return generer_meteo()
+                with db.origine("météo générée"):
+                    return generer_meteo()
             if nom == "meteo" and ident and action == "challenger":
-                return challenger_meteo(ident)
+                with db.origine("relecture de la météo"):
+                    return challenger_meteo(ident)
             if nom == "instance" and not ident and action == "proposer":
-                return agenda.proposer(bool(self._corps().get("tout")), aujourdhui())
+                with db.origine("créneaux proposés"):
+                    return agenda.proposer(bool(self._corps().get("tout")), aujourdhui())
             if nom in EDITABLES and not ident:
                 corps = self._corps()
                 if nom in ("risque", "decision"):
@@ -360,7 +419,7 @@ class Requete(BaseHTTPRequestHandler):
         if methode == "PUT":
             if nom == "mission" and not ident:
                 corps = self._corps()
-                for cle in ("seuils", "raci_roles"):
+                for cle in ("seuils", "raci_roles", "chiffrage"):
                     if isinstance(corps.get(cle), (dict, list)):
                         corps[cle] = json.dumps(corps[cle], ensure_ascii=False)
                 db.modifier("mission", 1, corps)
@@ -381,6 +440,47 @@ class Requete(BaseHTTPRequestHandler):
             return {"ok": True}
         raise Erreur("Opération non prise en charge.", 404)
 
+    def _missions(self, methode, chemin):
+        """Liste, création, import, export, ouverture et mise à la corbeille des missions."""
+        reste = chemin[len("/api/missions"):].strip("/")
+        if not reste:
+            if methode == "GET":
+                return {"missions": db.missions(), "derniere": db.derniere()}
+            if methode == "POST":
+                corps = self._corps()
+                nom = (corps.get("nom") or "").strip()
+                if not nom:
+                    raise Erreur("Donnez un nom à la mission.")
+                cle = db.creer_mission(nom, (corps.get("client") or "").strip())
+                db.marquer_derniere(cle)
+                return {"cle": cle}
+        if reste == "importer" and methode == "POST":
+            if int(self.headers.get("Content-Length") or 0) > TAILLE_MAX_IMPORT:
+                raise Erreur("Fichier trop volumineux (50 Mo au plus).", 413)
+            corps = self._corps()
+            try:
+                cle, avertissements = db.importer_mission(corps.get("fichier"), corps.get("nom"))
+            except ValueError as e:
+                raise Erreur(str(e))
+            db.marquer_derniere(cle)
+            return {"cle": cle, "avertissements": avertissements}
+        m = re.fullmatch(r"([a-z0-9][a-z0-9-]*)(?:/(\w+))?", reste)
+        if not m or not db.existe(m.group(1)):
+            raise Erreur("Mission introuvable.", 404)
+        cle, action = m.groups()
+        if methode == "GET" and action == "export":
+            with db.dans(cle):
+                contenu = json.dumps(db.exporter_mission(), ensure_ascii=False, indent=1)
+            return Fichier(contenu, "application/json; charset=utf-8",
+                           f"mission-{cle}-{aujourdhui().isoformat()}.json")
+        if methode == "PUT" and action == "ouvrir":
+            db.marquer_derniere(cle)
+            return {"ok": True}
+        if methode == "DELETE" and not action:
+            db.supprimer_mission(cle)
+            return {"missions": db.missions(), "derniere": db.derniere()}
+        raise Erreur("Opération non prise en charge.", 404)
+
     def do_GET(self):
         self._traiter("GET")
 
@@ -395,6 +495,6 @@ class Requete(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    db.initialiser()
+    db.demarrer()
     print(f"Co-pilote de mission : http://127.0.0.1:{PORT}  (Ctrl+C pour arrêter)")
     ThreadingHTTPServer(("127.0.0.1", PORT), Requete).serve_forever()

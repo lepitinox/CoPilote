@@ -7,6 +7,12 @@ import demo_cadre
 
 
 def charger(aujourdhui=None):
+    """Remplace la mission courante par la démonstration (sans inscrire l'historique)."""
+    with db.sans_journal():
+        _charger(aujourdhui)
+
+
+def _charger(aujourdhui):
     auj = aujourdhui or dt.date.today()
 
     def j(n):
@@ -107,3 +113,64 @@ def charger(aujourdhui=None):
         ),
     })
     demo_cadre.charger(j)
+    finances_demo(auj, j)
+
+
+def finances_demo(auj, j):
+    """Chiffrage, budget et attentes du client de la mission fictive."""
+    db.modifier("mission", 1, {"budget_vendu": 420000, "chiffrage": json.dumps({"mode_retenu": "detaille"})})
+    for i, (nom, metier, tjm, cout, raf) in enumerate([
+        ("Pilote de mission", "Pilotage de projet", 950, 620, 30), ("Product owner", "Product owner", 850, 560, 35),
+        ("Tech lead", "Tech lead", 900, 600, 40), ("Développeur", "Développeur", 700, 450, 120),
+        ("UX / UI", "UX / UI", 750, 480, 12), ("QA", "QA", 650, 420, 45)]):
+        db.creer("profil", {"nom": nom, "metier": metier, "tjm": tjm, "cout_journalier": cout, "raf_jours": raf, "rang": i})
+    # Macro : fait en avant-vente, avec peu d'informations.
+    for rang, (lot, lib, taille, conf) in enumerate([
+        ("V1", "Espace courtier connecté", "L", "moyenne"), ("V1", "Consultation des contrats", "M", "moyenne"),
+        ("V1", "Dépôt et suivi des demandes", "XL", "faible"), ("V1", "Intégration API contrats", "L", "faible"),
+        ("V2", "Souscription en ligne", "XL", "faible"), ("V2", "Parcours mobile", "L", "moyenne"),
+        ("V3", "Espace entreprise", "XL", "faible")]):
+        db.creer("estimation", {"mode": "macro", "lot": lot, "libelle": lib, "taille": taille, "confiance": conf, "rang": rang})
+    # Détaillé : refait après les ateliers de cadrage, par profil.
+    for rang, (lot, lib, profil, b, p, h, hyp) in enumerate([
+        ("V1", "Espace courtier connecté", "Développeur", 18, 24, 34, "SSO du client réutilisé"),
+        ("V1", "Espace courtier connecté", "UX / UI", 6, 8, 12, ""),
+        ("V1", "Consultation des contrats", "Développeur", 10, 14, 20, "API de consultation disponible"),
+        ("V1", "Dépôt et suivi des demandes", "Développeur", 40, 55, 80, "Six types de demandes, pièces jointes"),
+        ("V1", "Dépôt et suivi des demandes", "QA", 10, 14, 20, ""),
+        ("V1", "Intégration API contrats", "Tech lead", 15, 20, 35, "Dépend de l'équipe SI Contrats"),
+        ("V1", "Pilotage et cérémonies V1", "Pilote de mission", 25, 30, 35, ""),
+        ("V1", "Backlog et recette métier V1", "Product owner", 25, 30, 38, "")]):
+        db.creer("estimation", {"mode": "detaille", "lot": lot, "libelle": lib, "profil": profil, "jours_bas": b,
+                                "jours_probable": p, "jours_haut": h, "hypothese": hyp, "rang": rang})
+    mois = [f"{(auj.year * 12 + auj.month - 1 - k) // 12}-{(auj.month - 1 - k) % 12 + 1:02d}" for k in (3, 2, 1, 0)]
+    for m, jours in zip(mois, [(10, 8, 8, 20, 6, 0), (10, 9, 9, 36, 5, 4), (10, 9, 10, 40, 3, 8), (6, 5, 6, 24, 1, 5)]):
+        for (nom, *_), jr in zip([("Pilote de mission",), ("Product owner",), ("Tech lead",), ("Développeur",),
+                                  ("UX / UI",), ("QA",)], jours):
+            if jr:
+                db.creer("consommation", {"mois": m, "profil": nom, "jours": jr})
+    for d, lib, cat, montant, st in [
+        (j(-60), "Licences outil de maquettage", "logiciel", 2400, "payée"),
+        (j(-20), "Déplacements atelier Lyon", "déplacement", 1850, "payée"),
+        (j(30), "Audit d'accessibilité", "sous-traitance", 9500, "prévue")]:
+        db.creer("depense", {"date": d, "libelle": lib, "categorie": cat, "montant": montant, "statut": st})
+    for lib, d, montant, st, jalon in [
+        ("Acompte à la commande (20 %)", j(-90), 84000, "payée", ""),
+        ("Validation du dossier d'architecture (20 %)", j(-38), 84000, "facturée", "Dossier d'architecture validé"),
+        ("Lancement des tests utilisateurs (20 %)", j(-5), 84000, "à facturer", "Lancement des tests utilisateurs"),
+        ("Mise en service V1 (40 %)", j(84), 168000, "à facturer", "Mise en service V1")]:
+        db.creer("facture", {"libelle": lib, "date_prevue": d, "montant": montant, "statut": st, "jalon": jalon})
+    for pp, lib, cat, prio, sat, pos, rep, action, ech, revue in [
+        ("Marc L.", "Mise en service V1 avant la convention partenaires", "délai", 1, 3, "alignée",
+         "Date cible tenue si l'API contrats arrive avant la recette", "Point d'étape au comité sponsor", j(84), j(-6)),
+        ("Marc L.", "Signature électronique dès la V1", "périmètre", 2, 2, "à recadrer",
+         "Estimée à ~60 points : arbitrage V1 / V2 à faire en comité", "", j(14), j(-6)),
+        ("Camille R.", "Être informée chaque semaine des glissements", "communication", 1, 4, "alignée",
+         "Météo hebdomadaire envoyée le vendredi", "", "", j(-3)),
+        ("Équipe SI Contrats", "Pas de charge supplémentaire avant leur montée de version", "relation", 2, 2, "à recadrer",
+         "Besoin d'une date ferme pour l'API", "Atelier de planification commun", j(10), j(-45)),
+        ("Marc L.", "Rester dans l'enveloppe vendue", "coût", 1, 4, "alignée",
+         "Atterrissage présenté chaque mois", "", "", j(-6))]:
+        db.creer("attente", {"partie_prenante": pp, "libelle": lib, "categorie": cat, "priorite": prio,
+                             "satisfaction": sat, "position": pos, "reponse": rep, "prochaine_action": action,
+                             "echeance": ech, "revue_le": revue})

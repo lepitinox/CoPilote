@@ -241,10 +241,11 @@ textarea { min-height: 84px; resize: vertical; }
 <body>
 <header>
   <h1>Co-pilote de mission</h1>
-  <span class="mission" id="nom-mission"></span>
+  <select id="choix-mission" aria-label="Mission ouverte" style="width:auto;max-width:360px"></select>
+  <span class="mission" id="nom-mission" hidden></span>
   <div class="droite">
     <span class="pastille neutre" id="etat-llm"></span>
-    <button id="btn-demo" title="Remplace toutes les données par une mission fictive">Charger la démo</button>
+    <button id="btn-missions" title="Créer, importer, exporter ou mettre à la corbeille une mission">Missions</button>
   </div>
 </header>
 <div class="page">
@@ -257,6 +258,7 @@ textarea { min-height: 84px; resize: vertical; }
 <script src="/static/cadre.js"></script>
 <script src="/static/pilotage.js"></script>
 <script src="/static/graphes.js"></script>
+<script src="/static/finances.js"></script>
 <script>demarrer();</script>
 </body>
 </html>

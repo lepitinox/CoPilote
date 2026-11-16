@@ -1,3 +1,5 @@
 copilote.db
+copilote.db.*
+missions/
 __pycache__/
 modeles/

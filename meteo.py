@@ -22,10 +22,13 @@ def semaine(aujourdhui=None):
     return f"Semaine {auj.isocalendar()[1]} (du {fr(lundi)} au {fr(vendredi)})"
 
 
-def donnees(mission, jalons, livrables, sprints, risques, decisions, aujourdhui=None):
-    """Tout ce que la météo peut citer. C'est aussi l'entrée donnée au LLM."""
+def donnees(mission, jalons, livrables, sprints, risques, decisions, aujourdhui=None, autres_alertes=()):
+    """Tout ce que la météo peut citer. C'est aussi l'entrée donnée au LLM.
+
+    autres_alertes : déclencheurs du budget et des attentes du client."""
     auj = aujourdhui or dt.date.today()
-    al = calculs.alertes(mission, sprints, risques, decisions, auj)
+    al = calculs.alertes(mission, sprints, risques, decisions, auj) + list(autres_alertes)
+    al.sort(key=lambda x: -x["niveau"])  # niveau sponsor d'abord, ordre conservé sinon
     ouverts = [r for r in risques if r.get("etat") in calculs.OUVERTS]
     return {
         "date": auj.isoformat(),

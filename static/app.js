@@ -22,10 +22,12 @@ const utiles = e => e.flat(Infinity).filter(x => x != null && x !== false);
 function ajouter(...e) { Element.prototype.append.apply(this, utiles(e)); }
 function remplacer(...e) { Element.prototype.replaceChildren.apply(this, utiles(e)); }
 
+// Mission ouverte dans cet onglet : envoyée à chaque appel (deux onglets peuvent ouvrir deux missions).
+const enTetesMission = () => (etat.mission ? { "X-Mission": etat.mission } : {});
 async function api(methode, chemin, corps) {
   const r = await fetch("/api/" + chemin, {
     method: methode,
-    headers: corps ? { "Content-Type": "application/json" } : {},
+    headers: { ...enTetesMission(), ...(corps ? { "Content-Type": "application/json" } : {}) },
     body: corps ? JSON.stringify(corps) : undefined,
   });
   const d = await r.json().catch(() => ({ erreur: "Réponse illisible du serveur." }));
@@ -63,7 +65,7 @@ const tuile = (nom, valeur, note) => el("div", { class: "carte tuile" },
   el("div", { class: "nom" }, nom), el("div", { class: "valeur" }, valeur), note && el("div", { class: "note" }, note));
 
 // Références partagées entre vues (noms des lots pour les listes et les couleurs).
-const ref = { lots: [], acteurs: [], metiers: [], recurrences: {}, exports: null };
+const ref = { lots: [], acteurs: [], metiers: [], profils: [], jalons: [], recurrences: {}, exports: null };
 const nomsMetiers = () => [["", "—"], ...ref.metiers.map(m => [m.nom, m.nom])];
 const acteurParId = id => ref.acteurs.find(a => a.id === Number(id));
 const idsDe = v => { try { const l = JSON.parse(v || "[]"); return Array.isArray(l) ? l.map(Number) : []; } catch (e) { return []; } };
@@ -135,6 +137,39 @@ const ENTITES = {
     ["premiere", "Première séance", "date"], ["heure", "Heure", "heure"],
     ["duree_min", "Durée (minutes)", "nombre"], ["duree", "Durée (libellé affiché)", "texte"],
     ["rang", "Ordre d'affichage", "nombre"]] },
+  estimation: { nom: "élément chiffré", champs: [
+    ["mode", "Mode", "choix", [["macro", "Macro (peu d'informations)"], ["detaille", "Détaillé (après collecte)"]]],
+    ["lot", "Lot", "choix", () => [["", "—"], ...nomsLots().map(n => [n, n])]],
+    ["libelle", "Élément", "texte", null, true],
+    ["taille", "Taille (macro)", "choix", ["", "XS", "S", "M", "L", "XL"]],
+    ["confiance", "Confiance (macro)", "choix", ["", "forte", "moyenne", "faible"]],
+    ["profil", "Profil (détaillé)", "choix", () => [["", "—"], ...ref.profils.map(p => [p.nom, p.nom])]],
+    ["jours_bas", "Jours — bas", "nombre"], ["jours_probable", "Jours — probable (macro : remplace l'abaque)", "nombre"],
+    ["jours_haut", "Jours — haut", "nombre"], ["rang", "Ordre d'affichage", "nombre"],
+    ["hypothese", "Hypothèses", "long", null, true]] },
+  profil: { nom: "profil", champs: [
+    ["nom", "Profil", "texte"], ["metier", "Métier", "choix", nomsMetiers],
+    ["tjm", "TJM de vente (€)", "nombre"], ["cout_journalier", "Coût journalier (€)", "nombre"],
+    ["raf_jours", "Reste à faire (jours)", "nombre"], ["rang", "Ordre d'affichage", "nombre"]] },
+  consommation: { nom: "consommation", champs: [
+    ["mois", "Mois (AAAA-MM)", "texte"], ["profil", "Profil", "choix", () => [["", "—"], ...ref.profils.map(p => [p.nom, p.nom])]],
+    ["jours", "Jours consommés", "nombre"], ["commentaire", "Commentaire", "texte", null, true]] },
+  depense: { nom: "dépense", champs: [
+    ["libelle", "Dépense", "texte", null, true], ["date", "Date", "date"],
+    ["categorie", "Catégorie", "choix", ["", "logiciel", "matériel", "déplacement", "sous-traitance", "autre"]],
+    ["montant", "Montant (€)", "nombre"], ["statut", "Statut", "choix", ["prévue", "engagée", "payée"]]] },
+  facture: { nom: "échéance de facturation", champs: [
+    ["libelle", "Échéance", "texte", null, true], ["date_prevue", "Date prévue", "date"],
+    ["montant", "Montant (€)", "nombre"], ["statut", "Statut", "choix", ["à facturer", "facturée", "payée"]],
+    ["jalon", "Jalon déclencheur", "choix", () => [["", "—"], ...ref.jalons.map(j => [j.libelle, j.libelle])]]] },
+  attente: { nom: "attente du client", champs: [
+    ["partie_prenante", "Partie prenante", "choix", () => [["", "—"], ...ref.acteurs.map(a => [a.nom, a.nom])]],
+    ["categorie", "Catégorie", "choix", ["", "délai", "périmètre", "qualité", "coût", "relation", "communication"]],
+    ["libelle", "Attente exprimée", "texte", null, true],
+    ["priorite", "Priorité (1 : forte, 3 : faible)", "nombre"], ["satisfaction", "Satisfaction perçue (1 à 5)", "nombre"],
+    ["position", "Position", "choix", ["alignée", "à recadrer", "hors périmètre"]], ["echeance", "Échéance", "date"],
+    ["reponse", "Notre réponse, engagement ou message de recadrage", "long", null, true],
+    ["prochaine_action", "Prochaine action", "texte", null, true], ["revue_le", "Dernière revue avec le client", "date"]] },
   raci: { nom: "activité du RACI", champs: [
     ["domaine", "Domaine", "texte"], ["rang", "Ordre d'affichage", "nombre"],
     ["activite", "Activité", "texte", null, true]] },
@@ -219,7 +254,7 @@ const titreVue = (titre, aide, ...actions) => [
 // ---------- exports PowerPoint / Excel ----------
 async function telechargerFichier(url, bouton) {
   const tache = async () => {
-    const r = await fetch(url);
+    const r = await fetch(url, { headers: enTetesMission() });
     if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.erreur || "Erreur " + r.status); }
     const nom = decodeURIComponent((/filename\*=UTF-8''([^;]+)/.exec(r.headers.get("Content-Disposition") || "") || [])[1] || "export");
     const a = el("a", { href: URL.createObjectURL(await r.blob()), download: nom });
@@ -281,10 +316,10 @@ function dialogueModeles(vue) {
 // ---------- navigation ----------
 // VUES[clé] = [libellé du menu, groupe, fonction de rendu]
 const VUES = {};
-const GROUPES = ["Cadre de la mission", "Pilotage", "Saisie"];
+const GROUPES = ["Cadre de la mission", "Pilotage", "Finances", "Saisie"];
 const ORDRE = ["route", "lotissement", "storymap", "planning", "organisation", "gouvernance", "sprintkpi", "raci",
-  "mission", "synthese", "kpi", "risques", "decisions", "meteo", "sprints", "cr"];
-const etat = { vue: "route", cr: null, meteo: null, edition: false };
+  "mission", "synthese", "kpi", "risques", "attentes", "decisions", "meteo", "chiffrage", "budget", "sprints", "cr", "historique"];
+const etat = { vue: "route", cr: null, meteo: null, edition: false, mission: null, missions: [] };
 
 async function afficher(nom) {
   etat.vue = nom;
@@ -292,8 +327,8 @@ async function afficher(nom) {
   for (const b of document.querySelectorAll("#menu button")) b.setAttribute("aria-current", b.dataset.vue === nom ? "page" : "false");
   const v = el("div", {});
   try {
-    const [lots, acteurs, metiers] = await Promise.all([api("GET", "lot"), api("GET", "acteur"), api("GET", "metier")]);
-    ref.lots = lots.map(l => l.nom); ref.acteurs = acteurs; ref.metiers = metiers;
+    const [lots, acteurs, metiers, profils, jalons] = await Promise.all(["lot", "acteur", "metier", "profil", "jalon"].map(t => api("GET", t)));
+    ref.lots = lots.map(l => l.nom); ref.acteurs = acteurs; ref.metiers = metiers; ref.profils = profils; ref.jalons = jalons;
     if (!ref.exports) {
       const [ex, ag] = await Promise.all([api("GET", "modeles"), api("GET", "agenda")]);
       ref.exports = ex; ref.recurrences = ag.recurrences;
@@ -307,6 +342,10 @@ const recharger = () => afficher(etat.vue);
 async function entete() {
   const [m, e] = await Promise.all([api("GET", "mission"), api("GET", "etat")]);
   $("#nom-mission").textContent = [m.nom, m.client].filter(Boolean).join(" — ");
+  const fiche = etat.missions.find(x => x.cle === etat.mission);
+  if (fiche && (fiche.nom !== m.nom || fiche.client !== (m.client || ""))) {
+    Object.assign(fiche, { nom: m.nom, client: m.client || "" }); remplirChoixMission();
+  }
   const l = $("#etat-llm");
   l.textContent = e.sdk_installe ? "Modèle : " + e.modele : "Modèle non installé";
   l.title = e.sdk_installe ? (e.cle_presente ? "Clé d'API détectée." : "Aucune clé d'API dans l'environnement : les fonctions de rédaction peuvent échouer.")
@@ -314,17 +353,105 @@ async function entete() {
   l.className = "pastille " + (e.sdk_installe && e.cle_presente ? "vert" : "orange");
 }
 
-function demarrer() {
+// ---------- missions : choix, création, import, export, corbeille ----------
+const MEMO_MISSION = "copilote.mission";
+function memoriser(cle) { try { localStorage.setItem(MEMO_MISSION, cle); } catch (e) { /* sans importance */ } }
+async function listerMissions() {
+  const r = await api("GET", "missions");
+  etat.missions = r.missions;
+  return r;
+}
+function remplirChoixMission() {
+  const s = $("#choix-mission");
+  s.replaceChildren(...etat.missions.map(m => el("option", { value: m.cle, selected: m.cle === etat.mission },
+    m.nom + (m.client ? " — " + m.client : ""))));
+}
+async function ouvrirMission(cle, vue) {
+  etat.mission = cle; etat.cr = null; etat.meteo = null; memoriser(cle);
+  await api("PUT", `missions/${cle}/ouvrir`).catch(() => null);
+  remplirChoixMission();
+  await entete();
+  await afficher(vue || etat.vue);
+}
+function dialogueMissions() {
+  const d = $("#dialogue");
+  const rafraichir = async () => { await listerMissions(); remplirChoixMission(); dialogueMissions(); };
+  const importer = () => {
+    const choix = el("input", { type: "file", accept: ".json,application/json", style: "display:none" });
+    choix.addEventListener("change", async () => {
+      const f = choix.files[0]; if (!f) return;
+      try {
+        let contenu;
+        try { contenu = JSON.parse(await f.text()); } catch (e) { throw new Error("Ce fichier n'est pas un JSON lisible."); }
+        const r = await api("POST", "missions/importer", { fichier: contenu });
+        await listerMissions(); d.close(); await ouvrirMission(r.cle, "route");
+        dire("Mission importée." + (r.avertissements.length ? " " + r.avertissements.join(" ") : ""));
+      } catch (e) { dire(e.message, true); }
+    });
+    document.body.append(choix); choix.click(); setTimeout(() => choix.remove(), 60000);
+  };
+  const nom = el("input", { placeholder: "Nom de la mission", required: true });
+  const client = el("input", { placeholder: "Client (facultatif)" });
+  const lignes = etat.missions.map(m => el("tr", {},
+    el("td", {}, el("b", {}, m.nom), m.client && el("div", { style: "color:var(--doux);font-size:13px" }, m.client),
+      m.cle === etat.mission && pastille("vert", "ouverte")),
+    el("td", { style: "white-space:nowrap;color:var(--doux);font-size:13px" }, dateFr(m.modifiee_le) + " " + (m.modifiee_le || "").slice(11, 16)),
+    el("td", { style: "white-space:nowrap" },
+      m.cle !== etat.mission && el("button", { type: "button", onclick: async () => { d.close(); await ouvrirMission(m.cle); } }, "Ouvrir"), " ",
+      el("button", { type: "button", title: "Télécharger la mission en un fichier JSON", onclick: e => telechargerFichier(`/api/missions/${m.cle}/export`, e.target) }, "Exporter"), " ",
+      el("button", { type: "button", class: "danger", onclick: async () => {
+        if (!confirm(`Mettre la mission « ${m.nom} » à la corbeille ?\nLe fichier est déplacé dans missions/corbeille et peut y être récupéré.`)) return;
+        try {
+          const r = await api("DELETE", `missions/${m.cle}`);
+          etat.missions = r.missions;
+          if (m.cle === etat.mission) { d.close(); await ouvrirMission(r.derniere); } else await rafraichir();
+          dire("Mission mise à la corbeille.");
+        } catch (e) { dire(e.message, true); }
+      } }, "Corbeille"))));
+  d.replaceChildren(el("form", { method: "dialog", onsubmit: async e => {
+    e.preventDefault();
+    if (!nom.value.trim()) { nom.focus(); return; }
+    try {
+      const r = await api("POST", "missions", { nom: nom.value, client: client.value });
+      await listerMissions(); d.close(); await ouvrirMission(r.cle, "mission"); dire("Mission créée : complétez sa fiche.");
+    } catch (err) { dire(err.message, true); }
+  } },
+    el("h3", {}, "Missions"),
+    el("p", { class: "aide", style: "margin:0" }, "Chaque mission est un fichier séparé. L'export produit un fichier JSON lisible (données et historique) qui se réimporte ici, comme nouvelle mission."),
+    el("div", { class: "cadre-table" }, el("table", {}, el("tbody", {}, lignes))),
+    el("h3", { style: "margin-top:8px" }, "Nouvelle mission"),
+    el("div", { class: "champs" }, nom, client),
+    el("div", { class: "barre" },
+      el("button", { class: "principal" }, "Créer"),
+      el("button", { type: "button", onclick: importer }, "Importer un fichier…"),
+      el("button", { type: "button", title: "Mission fictive, dans sa propre mission « demo »", onclick: async e => {
+        if (etat.missions.some(m => m.cle === "demo") && !confirm("Réinitialiser la mission de démonstration ?")) return;
+        await pendant(e.target, "Chargement…", async () => {
+          const r = await api("POST", "demo"); await listerMissions(); d.close(); await ouvrirMission(r.cle, "route");
+          dire("Mission de démonstration chargée.");
+        });
+      } }, "Charger la démo"),
+      el("span", { class: "pousse" }),
+      el("button", { type: "button", onclick: () => d.close() }, "Fermer"))));
+  if (!d.open) d.showModal();
+}
+
+async function demarrer() {
   const menu = $("#menu");
   menu.append = ajouter;
   for (const g of GROUPES) {
     menu.append(el("h2", {}, g), ORDRE.filter(cle => VUES[cle] && VUES[cle][1] === g).map(cle => [cle, VUES[cle]]).map(([cle, v]) =>
       el("button", { "data-vue": cle, onclick: () => afficher(cle) }, v[0])));
   }
-  $("#btn-demo").addEventListener("click", async e => {
-    if (!confirm("Remplacer toutes les données par la mission de démonstration fictive ?")) return;
-    await pendant(e.target, "Chargement…", async () => { await api("POST", "demo"); await entete(); await afficher("route"); dire("Mission de démonstration chargée."); });
-  });
+  $("#btn-missions").addEventListener("click", dialogueMissions);
+  $("#choix-mission").addEventListener("change", e => ouvrirMission(e.target.value));
   const depart = location.hash.slice(1);
-  entete().then(() => afficher(VUES[depart] ? depart : "route")).catch(e => dire(e.message, true));
+  try {
+    const r = await listerMissions();
+    let memo = null; try { memo = localStorage.getItem(MEMO_MISSION); } catch (e) { /* sans importance */ }
+    etat.mission = etat.missions.some(m => m.cle === memo) ? memo : r.derniere;
+    remplirChoixMission();
+    await entete();
+    await afficher(VUES[depart] ? depart : "route");
+  } catch (e) { dire(e.message, true); }
 }

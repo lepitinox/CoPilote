@@ -4,6 +4,7 @@ import json
 
 import calculs
 import db
+import finances
 import meteo
 
 
@@ -12,11 +13,35 @@ def etat_mission():
             db.lister("risque"), db.lister("decision"))
 
 
+def chiffrage():
+    return finances.chiffrage(db.mission(), db.lister("estimation"), db.lister("profil"))
+
+
+def budget(aujourdhui=None):
+    m = db.mission()
+    return finances.budget(m, db.lister("profil"), db.lister("consommation"), db.lister("depense"),
+                           db.lister("facture"), db.lister("livrable"), chiffrage(), aujourdhui)
+
+
+def suivi_attentes(aujourdhui=None):
+    return finances.attentes(db.lister("attente"), db.journal("attente", limite=1000), aujourdhui)
+
+
+def alertes_complementaires(aujourdhui=None):
+    return budget(aujourdhui)["alertes"] + suivi_attentes(aujourdhui)["alertes"]
+
+
 def synthese(aujourdhui=None):
     auj = aujourdhui or dt.date.today()
-    d = meteo.donnees(*etat_mission(), auj)
+    # Les déclencheurs du budget et des attentes du client s'ajoutent à ceux de la livraison.
+    b, a = budget(auj), suivi_attentes(auj)
+    d = meteo.donnees(*etat_mission(), auj, b["alertes"] + a["alertes"])
     return {
         "semaine": d["semaine"], "tendance": d["tendance_calculee"], "alertes": d["alertes"],
+        "budget": {k: b[k] for k in ("reference", "reference_source", "consomme", "atterrissage", "ecart", "taux_consomme")},
+        "attentes": {"total": len(a["attentes"]),
+                     "insatisfaites": sum(1 for x in a["attentes"] if isinstance(x.get("satisfaction"), int) and x["satisfaction"] <= 2),
+                     "a_recadrer": sum(1 for x in a["attentes"] if x.get("position") == "à recadrer")},
         "kpi": d["kpi"], "atterrissage": d["atterrissage"],
         "seuils": calculs.seuils(db.mission()),
         "propositions_en_attente": len(db.lister("proposition", "statut = 'en attente'")),
