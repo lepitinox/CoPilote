@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Co-pilote de mission</title>
+<style>
+:root {
+  --fond: #f6f7f9; --carte: #fff; --trait: #dfe3e8; --texte: #1c2430; --doux: #5d6878;
+  --accent: #1f5f8b; --accent-fond: #e8f1f7;
+  --vert: #1e7d4f; --vert-fond: #e3f4eb; --orange: #a35a00; --orange-fond: #fdf0dc;
+  --rouge: #b3261e; --rouge-fond: #fbe7e5;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--fond); color: var(--texte);
+  font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
+header { background: var(--carte); border-bottom: 1px solid var(--trait); padding: 12px 24px;
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+header h1 { font-size: 17px; margin: 0; }
+header .mission { color: var(--doux); }
+header .droite { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+nav { display: flex; gap: 4px; padding: 0 24px; background: var(--carte);
+  border-bottom: 1px solid var(--trait); overflow-x: auto; }
+nav button { border: 0; background: none; padding: 10px 14px; font: inherit; color: var(--doux);
+  border-bottom: 3px solid transparent; cursor: pointer; white-space: nowrap; }
+nav button[aria-selected="true"] { color: var(--accent); border-color: var(--accent); font-weight: 600; }
+main { max-width: 1180px; margin: 0 auto; padding: 24px 16px 64px; }
+h2 { font-size: 19px; margin: 0 0 4px; }
+h3 { font-size: 15px; margin: 24px 0 8px; }
+p.aide { color: var(--doux); margin: 0 0 16px; max-width: 75ch; }
+.carte { background: var(--carte); border: 1px solid var(--trait); border-radius: 8px; padding: 16px; }
+.grille { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.tuile .valeur { font-size: 24px; font-weight: 600; }
+.tuile .nom { color: var(--doux); font-size: 13px; }
+.tuile .note { font-size: 13px; color: var(--doux); }
+table { width: 100%; border-collapse: collapse; background: var(--carte); }
+.cadre-table { border: 1px solid var(--trait); border-radius: 8px; overflow-x: auto; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--trait); vertical-align: top; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--doux);
+  background: #fafbfc; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+tbody tr.cliquable { cursor: pointer; }
+tbody tr.cliquable:hover { background: var(--accent-fond); }
+td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.long { max-width: 340px; }
+button, .bouton { font: inherit; border: 1px solid var(--trait); background: var(--carte);
+  border-radius: 6px; padding: 6px 12px; cursor: pointer; color: var(--texte); }
+button.principal { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.danger { color: var(--rouge); }
+button:disabled { opacity: .55; cursor: wait; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px; }
+.barre { display: flex; gap: 8px; align-items: center; margin: 12px 0; flex-wrap: wrap; }
+.barre .pousse { margin-left: auto; }
+.pastille { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 12.5px;
+  font-weight: 600; white-space: nowrap; border: 1px solid transparent; }
+.vert { background: var(--vert-fond); color: var(--vert); }
+.orange { background: var(--orange-fond); color: var(--orange); }
+.rouge { background: var(--rouge-fond); color: var(--rouge); }
+.neutre { background: #eef0f3; color: var(--doux); }
+.liste { display: grid; gap: 8px; }
+.item { background: var(--carte); border: 1px solid var(--trait); border-radius: 8px; padding: 12px 14px; }
+.item .tete { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.item .titre { font-weight: 600; }
+.item .detail { color: var(--doux); margin-top: 2px; }
+.item blockquote { margin: 8px 0 0; padding: 6px 10px; background: var(--fond);
+  border-radius: 6px; font-size: 14px; color: var(--doux); }
+.item .actions { display: flex; gap: 8px; margin-top: 10px; }
+.vide { color: var(--doux); padding: 20px; text-align: center; background: var(--carte);
+  border: 1px dashed var(--trait); border-radius: 8px; }
+.deux { display: grid; grid-template-columns: 300px 1fr; gap: 16px; align-items: start; }
+@media (max-width: 800px) { .deux { grid-template-columns: 1fr; } }
+.menu { display: grid; gap: 6px; }
+.menu button { text-align: left; }
+.menu button[aria-current="true"] { border-color: var(--accent); background: var(--accent-fond); }
+.menu small { display: block; color: var(--doux); }
+dialog { border: 1px solid var(--trait); border-radius: 10px; padding: 0; width: min(640px, 94vw); }
+dialog::backdrop { background: rgba(20, 28, 40, .4); }
+dialog form { padding: 20px; display: grid; gap: 12px; }
+dialog h3 { margin: 0; font-size: 17px; }
+label { display: grid; gap: 4px; font-size: 13px; color: var(--doux); }
+input, select, textarea { font: inherit; color: var(--texte); padding: 7px 9px;
+  border: 1px solid var(--trait); border-radius: 6px; background: #fff; width: 100%; }
+textarea { min-height: 84px; resize: vertical; }
+.champs { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+.champs .large { grid-column: 1 / -1; }
+@media (max-width: 560px) { .champs { grid-template-columns: 1fr; } }
+.rendu { background: var(--carte); border: 1px solid var(--trait); border-radius: 8px; padding: 20px 24px; }
+.rendu h1 { font-size: 20px; margin: 0 0 8px; }
+.rendu h2 { font-size: 16px; margin: 20px 0 8px; }
+.rendu table { border: 1px solid var(--trait); font-size: 14px; }
+.rendu td, .rendu th { border: 1px solid var(--trait); }
+#edition { min-height: 460px; font: 13px/1.5 Consolas, monospace; }
+#message { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 10;
+  background: var(--texte); color: #fff; padding: 10px 16px; border-radius: 8px;
+  max-width: min(680px, 92vw); display: none; }
+#message.erreur { background: var(--rouge); }
+.bandeau { background: var(--orange-fond); color: var(--orange); border-radius: 8px;
+  padding: 10px 14px; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Co-pilote de mission</h1>
+  <span class="mission" id="nom-mission"></span>
+  <div class="droite">
+    <span class="pastille neutre" id="etat-llm"></span>
+    <button id="btn-demo" title="Remplace toutes les données par une mission fictive">Charger la démo</button>
+  </div>
+</header>
+<nav id="onglets" role="tablist"></nav>
+<main id="vue"></main>
+<dialog id="dialogue"></dialog>
+<div id="message" role="status"></div>
+
+<script>
+"use strict";
+// ---------- utilitaires ----------
+const $ = (s, r = document) => r.querySelector(s);
+function el(tag, attrs = {}, ...enfants) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k === "class") n.className = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v === true ? "" : v);
+  }
+  for (const e of enfants.flat(Infinity)) if (e != null && e !== false) n.append(e);
+  return n;
+}
+async function api(methode, chemin, corps) {
+  const r = await fetch("/api/" + chemin, {
+    method: methode,
+    headers: corps ? { "Content-Type": "application/json" } : {},
+    body: corps ? JSON.stringify(corps) : undefined,
+  });
+  const d = await r.json().catch(() => ({ erreur: "Réponse illisible du serveur." }));
+  if (!r.ok) throw new Error(d.erreur || "Erreur " + r.status);
+  return d;
+}
+let minuterie;
+function dire(texte, erreur = false) {
+  const m = $("#message");
+  m.textContent = texte; m.className = erreur ? "erreur" : ""; m.style.display = "block";
+  clearTimeout(minuterie);
+  minuterie = setTimeout(() => (m.style.display = "none"), erreur ? 9000 : 3500);
+}
+async function pendant(bouton, libelle, tache) {
+  const avant = bouton.textContent;
+  bouton.disabled = true; bouton.textContent = libelle;
+  try { return await tache(); }
+  catch (e) { dire(e.message, true); }
+  finally { bouton.disabled = false; bouton.textContent = avant; }
+}
+const MOIS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+function dateFr(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || "");
+  return m ? `${+m[3]} ${MOIS[+m[2] - 1]} ${m[1]}` : "—";
+}
+const nb = v => (v == null || v === "" ? "—" : Number(v).toLocaleString("fr-FR"));
+const pct = v => (v == null ? "—" : Math.round(v * 100) + " %");
+const LIB_TENDANCE = { vert: "Vert", orange: "Orange", rouge: "Rouge" };
+const pastille = (classe, texte) => el("span", { class: "pastille " + classe }, texte);
+const tendance = t => (t ? pastille(t, LIB_TENDANCE[t] || t) : "—");
+
+// ---------- description des objets ----------
+// champ : [clé, libellé, type, options, large]
+const ENTITES = {
+  jalon: { nom: "jalon", champs: [
+    ["libelle", "Libellé", "texte", null, true], ["date", "Date", "date"],
+    ["version", "Version", "texte"], ["statut", "Statut", "choix", ["à venir", "atteint", "en retard"]]] },
+  livrable: { nom: "livrable", champs: [
+    ["chantier", "Chantier", "texte"], ["libelle", "Livrable", "texte"],
+    ["avancement", "Avancement (%)", "nombre"], ["tendance", "Tendance", "choix", ["vert", "orange", "rouge"]],
+    ["statut", "Statut en une ligne", "texte", null, true]] },
+  sprint: { nom: "sprint", champs: [
+    ["numero", "Numéro", "nombre"], ["date_fin", "Date de fin", "date"],
+    ["capacite", "Capacité (j/h)", "nombre"], ["prevu", "Points prévus", "nombre"],
+    ["realise", "Points réalisés", "nombre"], ["ajoute", "Points ajoutés au backlog", "nombre"],
+    ["reste", "Reste à faire en fin de sprint", "nombre"], ["moral", "Moral (1 à 5)", "nombre"],
+    ["anomalies_creees", "Anomalies créées", "nombre"], ["anomalies_corrigees", "Anomalies corrigées", "nombre"]] },
+  risque: { nom: "risque ou adhérence", champs: [
+    ["nature", "Nature", "choix", ["risque", "adherence"]], ["etat", "État", "choix", ["ouvert", "en traitement", "clos"]],
+    ["titre", "Titre", "texte", null, true], ["description", "Description (cause, conséquence)", "long", null, true],
+    ["probabilite", "Probabilité (1 à 3)", "nombre"], ["impact", "Impact (1 à 3)", "nombre"],
+    ["evolution", "Évolution", "choix", ["hausse", "stable", "baisse"]], ["lot", "Lot impacté", "texte"],
+    ["porteur", "Porteur", "texte"], ["echeance", "Échéance", "date"],
+    ["plan_action", "Plan d'action", "long", null, true], ["maj_le", "Dernière mise à jour", "date"]] },
+  decision: { nom: "décision ou action", champs: [
+    ["nature", "Nature", "choix", ["decision", "action"]],
+    ["statut", "Statut", "choix", ["à prendre", "prise", "à faire", "faite"]],
+    ["titre", "Titre", "texte", null, true], ["detail", "Détail", "long", null, true],
+    ["porteur", "Décideur ou porteur", "texte"], ["echeance", "Échéance", "date"],
+    ["instance", "Instance", "texte"]] },
+  compte_rendu: { nom: "compte rendu", champs: [
+    ["date", "Date", "date"], ["titre", "Titre", "texte"],
+    ["texte", "Texte du compte rendu ou des notes", "long", null, true]] },
+};
+
+function formulaire(type, objet, apres) {
+  const def = ENTITES[type], d = $("#dialogue"), saisies = {};
+  const champs = def.champs.map(([cle, lib, genre, options, large]) => {
+    let s;
+    const v = objet?.[cle] ?? "";
+    if (genre === "choix") {
+      s = el("select", {}, options.map(o => el("option", { value: o, selected: o === v }, o)));
+    } else if (genre === "long") {
+      s = el("textarea", {}); s.value = v;
+      if (cle === "texte") s.style.minHeight = "240px";
+    } else {
+      s = el("input", { type: genre === "date" ? "date" : genre === "nombre" ? "number" : "text", step: "any" });
+      s.value = v;
+    }
+    saisies[cle] = [s, genre];
+    return el("label", { class: large ? "large" : "" }, lib, s);
+  });
+  const form = el("form", { method: "dialog", onsubmit: async e => {
+    e.preventDefault();
+    const corps = {};
+    for (const [cle, [s, genre]] of Object.entries(saisies))
+      corps[cle] = genre === "nombre" ? (s.value === "" ? null : Number(s.value)) : s.value;
+    try {
+      if (objet) await api("PUT", `${type}/${objet.id}`, corps); else await api("POST", type, corps);
+      d.close(); await apres();
+    } catch (err) { dire(err.message, true); }
+  } },
+    el("h3", {}, (objet ? "Modifier : " : "Ajouter : ") + def.nom),
+    el("div", { class: "champs" }, champs),
+    el("div", { class: "barre" },
+      objet && el("button", { type: "button", class: "danger", onclick: async () => {
+        if (!confirm("Supprimer définitivement cet élément ?")) return;
+        try { await api("DELETE", `${type}/${objet.id}`); d.close(); await apres(); }
+        catch (err) { dire(err.message, true); }
+      } }, "Supprimer"),
+      el("span", { class: "pousse" }),
+      el("button", { type: "button", onclick: () => d.close() }, "Annuler"),
+      el("button", { class: "principal" }, "Enregistrer")));
+  d.replaceChildren(form); d.showModal();
+}
+
+function tableau(type, lignes, colonnes, apres) {
+  if (!lignes.length) return el("div", { class: "vide" }, "Aucun élément pour l'instant.");
+  return el("div", { class: "cadre-table" }, el("table", {},
+    el("thead", {}, el("tr", {}, colonnes.map(c => el("th", {}, c[0])))),
+    el("tbody", {}, lignes.map(l => el("tr", {
+      class: "cliquable", tabindex: 0, title: "Modifier",
+      onclick: () => formulaire(type, l, apres),
+      onkeydown: e => { if (e.key === "Enter") formulaire(type, l, apres); },
+    }, colonnes.map(c => el("td", { class: c[2] || "" }, c[1](l))))))));
+}
+function section(titre, type, lignes, colonnes, apres) {
+  return el("section", {}, el("div", { class: "barre", style: "margin-top:20px" }, el("h3", { style: "margin:0" }, titre),
+    el("button", { class: "pousse", onclick: () => formulaire(type, null, apres) }, "Ajouter")),
+    tableau(type, lignes, colonnes, apres));
+}
+
+// ---------- vues ----------
+const VUES = {
+  synthese: ["Synthèse", async v => {
+    const s = await api("GET", "synthese"), k = s.kpi, a = s.atterrissage;
+    v.append(el("h2", {}, "Synthèse — " + s.semaine),
+      el("p", { class: "aide" }, "La trajectoire reste-t-elle crédible, qu'est-ce qui la menace, quelle décision faut-il faire prendre ? Tous les chiffres sont calculés à partir des données saisies."));
+    if (!k) { v.append(el("div", { class: "vide" }, "Aucun sprint saisi. Renseignez la mission et les sprints, ou chargez la démo.")); return; }
+    let fin = "Non calculable", note = "Le backlog grossit plus vite qu'il ne se vide";
+    if (a.atteignable) {
+      fin = dateFr(a.date_fin_estimee);
+      note = a.ecart_sprints == null ? "Pas de date cible" : a.ecart_sprints === 0 ? "Dans la cible du " + dateFr(a.date_cible)
+        : `+${a.ecart_sprints} sprints après la cible du ${dateFr(a.date_cible)}`;
+    }
+    const tuile = (nom, valeur, noteT) => el("div", { class: "carte tuile" },
+      el("div", { class: "nom" }, nom), el("div", { class: "valeur" }, valeur), noteT && el("div", { class: "note" }, noteT));
+    v.append(el("div", { class: "grille" },
+      tuile("Tendance calculée", tendance(s.tendance), `${s.alertes.length} alerte(s) active(s)`),
+      tuile("Fin estimée", fin, note),
+      tuile(`Sprint ${k.sprint} : réalisé / prévu`, `${nb(k.realise)} / ${nb(k.prevu)}`, pct(k.taux_realisation)),
+      tuile("Reste à faire", nb(k.reste) + " pts", `Consommation nette : ${nb(a.consommation_nette)} pts par sprint`),
+      tuile("Points ajoutés", nb(k.ajoute), `Moyenne : ${nb(k.ajout_moyen)} · marge : ${nb(s.seuils.marge_ajout)}`),
+      tuile("Moral", k.moral ? k.moral + " / 5" : "—", `Anomalies : ${k.anomalies_creees} créées, ${k.anomalies_corrigees} corrigées`)));
+    v.append(el("h3", {}, "Alertes"));
+    v.append(s.alertes.length ? el("div", { class: "liste" }, s.alertes.map(x => el("div", { class: "item" },
+      el("div", { class: "tete" }, pastille(x.niveau >= 3 ? "rouge" : "orange", x.niveau >= 3 ? "Niveau 3 — sponsor" : "Niveau 2 — projet"),
+        el("span", { class: "titre" }, x.titre)),
+      el("div", { class: "detail" }, x.detail))))
+      : el("div", { class: "vide" }, "Aucun déclencheur atteint."));
+    v.append(el("h3", {}, "À traiter"), el("div", { class: "grille" },
+      tuile("Propositions à valider", nb(s.propositions_en_attente), "Onglet Comptes rendus"),
+      tuile("Risques et adhérences ouverts", nb(s.risques_ouverts)),
+      tuile("Décisions à prendre", nb(s.decisions_a_prendre))));
+  }],
+
+  mission: ["Mission", async v => {
+    const [m, jalons, livrables] = await Promise.all([api("GET", "mission"), api("GET", "jalon"), api("GET", "livrable")]);
+    const recharger = () => afficher("mission");
+    const champ = (cle, lib, genre = "text", large = false) => {
+      const s = genre === "long" ? el("textarea", { name: cle }) : el("input", { name: cle, type: genre });
+      s.value = m[cle] ?? "";
+      return el("label", { class: large ? "large" : "" }, lib, s);
+    };
+    v.append(el("h2", {}, "Fiche mission"),
+      el("p", { class: "aide" }, "Objectifs et porteurs des trois dimensions du pilotage, hypothèses du planning et date cible de l'atterrissage."),
+      el("form", { class: "carte", onsubmit: async e => {
+        e.preventDefault();
+        const corps = Object.fromEntries(new FormData(e.target));
+        corps.duree_sprint_jours = Number(corps.duree_sprint_jours) || 14;
+        try { await api("PUT", "mission", corps); dire("Fiche mission enregistrée."); await entete(); }
+        catch (err) { dire(err.message, true); }
+      } }, el("div", { class: "champs" },
+        champ("nom", "Nom de la mission"), champ("client", "Client"),
+        champ("objectif_business", "Objectif business", "long"), champ("porteur_business", "Porteur business"),
+        champ("objectif_solution", "Objectif solution", "long"), champ("porteur_solution", "Porteur solution"),
+        champ("objectif_projet", "Objectif projet", "long"), champ("porteur_projet", "Porteur projet"),
+        champ("hypotheses", "Hypothèses du planning", "long", true),
+        champ("date_cible", "Date cible", "date"), champ("duree_sprint_jours", "Durée d'un sprint (jours)", "number")),
+        el("div", { class: "barre" }, el("button", { class: "principal pousse" }, "Enregistrer"))),
+      section("Jalons", "jalon", jalons, [
+        ["Jalon", l => l.libelle], ["Date", l => dateFr(l.date)], ["Version", l => l.version || "—"],
+        ["Statut", l => l.statut || "—"]], recharger),
+      section("Livrables", "livrable", livrables, [
+        ["Chantier", l => l.chantier || "—"], ["Livrable", l => l.libelle],
+        ["Avancement", l => (l.avancement == null ? "—" : l.avancement + " %"), "num"],
+        ["Statut", l => l.statut || "—", "long"], ["Tendance", l => tendance(l.tendance)]], recharger));
+  }],
+
+  sprints: ["Sprints", async v => {
+    const sprints = await api("GET", "sprint");
+    v.append(el("h2", {}, "Sprints"),
+      el("p", { class: "aide" }, "Chiffres saisis en fin de sprint. Ils alimentent les KPI, l'atterrissage et les déclencheurs."),
+      section("Historique", "sprint", sprints, [
+        ["Sprint", l => l.numero, "num"], ["Fin", l => dateFr(l.date_fin)],
+        ["Prévu", l => nb(l.prevu), "num"], ["Réalisé", l => nb(l.realise), "num"],
+        ["Taux", l => (l.prevu > 0 ? pct(l.realise / l.prevu) : "—"), "num"],
+        ["Ajouté", l => nb(l.ajoute), "num"], ["Reste", l => nb(l.reste), "num"],
+        ["Anomalies créées / corrigées", l => `${nb(l.anomalies_creees)} / ${nb(l.anomalies_corrigees)}`, "num"],
+        ["Moral", l => (l.moral ? l.moral + " / 5" : "—"), "num"]], () => afficher("sprints")));
+  }],
+
+  registre: ["Risques et adhérences", async v => {
+    const lignes = await api("GET", "risque");
+    const crit = l => (l.probabilite || 0) * (l.impact || 0);
+    v.append(el("h2", {}, "Risques et adhérences"),
+      el("p", { class: "aide" }, "Triés par criticité (probabilité × impact, de 1 à 9). Une adhérence est une dépendance envers une autre équipe ou un tiers : elle porte un porteur et une échéance."),
+      section("Registre", "risque", lignes, [
+        ["Nature", l => (l.nature === "adherence" ? "Adhérence" : "Risque")],
+        ["Titre", l => l.titre, "long"],
+        ["Criticité", l => (crit(l) ? pastille(crit(l) >= 6 ? "rouge" : crit(l) >= 3 ? "orange" : "vert", crit(l) + " / 9") : "—")],
+        ["État", l => l.etat || "—"], ["Évolution", l => l.evolution || "—"],
+        ["Porteur", l => l.porteur || pastille("orange", "Sans porteur")],
+        ["Échéance", l => dateFr(l.echeance)], ["Lot", l => l.lot || "—"],
+        ["Mis à jour", l => dateFr(l.maj_le)]], () => afficher("registre")));
+  }],
+
+  decisions: ["Décisions et actions", async v => {
+    const lignes = await api("GET", "decision"), auj = new Date().toISOString().slice(0, 10);
+    const recharger = () => afficher("decisions");
+    const ouvert = l => l.statut === "à prendre" || l.statut === "à faire";
+    const cols = [
+      ["Titre", l => l.titre, "long"], ["Statut", l => l.statut || "—"],
+      ["Décideur ou porteur", l => l.porteur || pastille("orange", "Non désigné")],
+      ["Échéance", l => [dateFr(l.echeance), ouvert(l) && l.echeance && l.echeance < auj ? [" ", pastille("rouge", "En retard")] : null]],
+      ["Instance", l => l.instance || "—"]];
+    v.append(el("h2", {}, "Décisions et actions"),
+      el("p", { class: "aide" }, "Le journal des décisions prises et à prendre, et les actions qui en découlent."),
+      section("Décisions", "decision", lignes.filter(l => l.nature === "decision"), cols, recharger),
+      section("Actions", "decision", lignes.filter(l => l.nature !== "decision"), cols, recharger));
+  }],
+
+  cr: ["Comptes rendus", async v => {
+    const [crs, props] = await Promise.all([api("GET", "compte_rendu"), api("GET", "proposition")]);
+    const recharger = () => afficher("cr");
+    if (!crs.some(c => c.id === etat.cr)) etat.cr = crs[0]?.id;
+    const cr = crs.find(c => c.id === etat.cr);
+    v.append(el("h2", {}, "Comptes rendus"),
+      el("p", { class: "aide" }, "Déposez un compte rendu ou des notes : le co-pilote propose les mises à jour du registre, chacune avec l'extrait qui la justifie. Rien n'entre au registre sans votre validation."));
+    const menu = el("div", { class: "menu" },
+      el("button", { class: "principal", onclick: () => formulaire("compte_rendu", null, recharger) }, "Ajouter un compte rendu"),
+      crs.map(c => el("button", { "aria-current": c.id === etat.cr, onclick: () => { etat.cr = c.id; recharger(); } },
+        c.titre || "Sans titre", el("small", {}, dateFr(c.date) + " · " +
+          props.filter(p => p.cr_id === c.id && p.statut === "en attente").length + " à valider"))));
+    const droite = el("div", {});
+    if (!cr) droite.append(el("div", { class: "vide" }, "Aucun compte rendu."));
+    else {
+      const siennes = props.filter(p => p.cr_id === cr.id);
+      droite.append(el("div", { class: "barre", style: "margin-top:0" },
+        el("strong", {}, cr.titre || "Sans titre"), el("span", { style: "color:var(--doux)" }, dateFr(cr.date)),
+        el("button", { class: "pousse", onclick: () => formulaire("compte_rendu", cr, recharger) }, "Modifier le texte"),
+        el("button", { class: "principal", onclick: e => pendant(e.target, "Analyse en cours…", async () => {
+          const r = await api("POST", `compte_rendu/${cr.id}/extraire`);
+          dire(r.filter(p => p.statut === "en attente").length + " proposition(s) à valider."); await recharger();
+        }) }, siennes.length ? "Relancer l'extraction" : "Extraire les propositions")));
+      const LIB = { risque: "Risque", adherence: "Adhérence", decision: "Décision", action: "Action" };
+      droite.append(siennes.length ? el("div", { class: "liste" }, siennes.map(p => {
+        const c = JSON.parse(p.contenu), attente = p.statut === "en attente";
+        const infos = [c.porteur && "Porteur : " + c.porteur, c.echeance && "Échéance : " + dateFr(c.echeance),
+          c.probabilite ? `Probabilité ${c.probabilite} / 3` : null, c.impact ? `Impact ${c.impact} / 3` : null].filter(Boolean).join(" · ");
+        const agir = (verbe, ok) => async e => pendant(e.target, "…", async () => {
+          await api("POST", `proposition/${p.id}/${verbe}`); dire(ok); await recharger(); });
+        return el("div", { class: "item" },
+          el("div", { class: "tete" }, pastille("neutre", LIB[p.cible] || p.cible),
+            pastille("neutre", p.operation === "creer" ? "Création" : "Mise à jour de n° " + p.ref_id),
+            el("span", { class: "titre" }, c.titre),
+            !attente && pastille(p.statut === "acceptée" ? "vert" : "neutre", p.statut)),
+          c.description && el("div", { class: "detail" }, c.description),
+          infos && el("div", { class: "detail" }, infos),
+          el("blockquote", {}, p.extrait ? "« " + p.extrait + " »" : "Aucun extrait fourni.",
+            !p.extrait_verifie && [" ", pastille("orange", "Extrait non retrouvé dans le texte")]),
+          attente && el("div", { class: "actions" },
+            el("button", { class: "principal", onclick: agir("accepter", "Ajouté au registre.") }, "Accepter"),
+            el("button", { onclick: agir("rejeter", "Proposition rejetée.") }, "Rejeter")));
+      })) : el("div", { class: "vide" }, "Pas encore de proposition pour ce compte rendu."));
+    }
+    v.append(el("div", { class: "deux" }, menu, droite));
+  }],
+
+  meteo: ["Météo", async v => {
+    const meteos = await api("GET", "meteo");
+    const recharger = () => afficher("meteo");
+    if (!meteos.some(m => m.id === etat.meteo)) etat.meteo = meteos[0]?.id;
+    const m = meteos.find(x => x.id === etat.meteo);
+    v.append(el("h2", {}, "Météo hebdomadaire"),
+      el("p", { class: "aide" }, "Le co-pilote assemble les chiffres et propose la rédaction. Vous relisez, tranchez et diffusez."));
+    const menu = el("div", { class: "menu" },
+      el("button", { class: "principal", onclick: e => pendant(e.target, "Rédaction en cours…", async () => {
+        const r = await api("POST", "meteo"); etat.meteo = r.meteo.id;
+        dire(r.avertissement || "Projet de météo généré.", !!r.avertissement); await recharger();
+      }) }, "Générer la météo de la semaine"),
+      meteos.map(x => el("button", { "aria-current": x.id === etat.meteo, onclick: () => { etat.meteo = x.id; etat.edition = false; recharger(); } },
+        x.semaine, el("small", {}, `${x.statut} · rédaction : ${x.source}`))));
+    const droite = el("div", {});
+    if (!m) droite.append(el("div", { class: "vide" }, "Aucune météo générée."));
+    else {
+      const choix = el("select", { style: "width:auto" }, ["vert", "orange", "rouge"].map(t =>
+        el("option", { value: t, selected: t === m.tendance }, LIB_TENDANCE[t])));
+      const motif = el("input", { placeholder: "Motif, requis si la tendance diffère de la tendance calculée" });
+      motif.value = m.motif_derogation || "";
+      const edition = el("textarea", { id: "edition" }); edition.value = m.contenu;
+      const enregistrer = (plus = {}) => api("PUT", `meteo/${m.id}`, {
+        tendance: choix.value, motif_derogation: motif.value, ...(etat.edition ? { contenu: edition.value } : {}), ...plus });
+      droite.append(
+        m.source === "gabarit" && el("div", { class: "bandeau" }, "Météo factuelle, sans rédaction par le modèle : les impacts et les actions des points de vigilance restent à écrire."),
+        el("div", { class: "carte" },
+          el("div", { class: "barre", style: "margin-top:0" }, "Tendance calculée :", tendance(m.tendance_calculee),
+            el("span", {}, "· Tendance retenue :"), choix),
+          motif,
+          el("div", { class: "barre", style: "margin-bottom:0" },
+            el("button", { onclick: () => { etat.edition = !etat.edition; recharger(); } }, etat.edition ? "Aperçu" : "Modifier le texte"),
+            el("button", { class: "principal", onclick: e => pendant(e.target, "…", async () => { await enregistrer(); etat.edition = false; dire("Météo enregistrée."); await recharger(); }) }, "Enregistrer"),
+            el("button", { onclick: e => pendant(e.target, "Relecture en cours…", async () => {
+              await enregistrer(); const r = await api("POST", `meteo/${m.id}/challenger`);
+              dire(r.avertissement || "Relecture terminée.", !!r.avertissement); etat.edition = false; await recharger();
+            }) }, "Challenger"),
+            el("span", { class: "pousse" }),
+            el("button", { onclick: () => telecharger(m) }, "Télécharger (.md)"),
+            m.statut !== "diffusée" && el("button", { onclick: e => pendant(e.target, "…", async () => { await enregistrer({ statut: "diffusée" }); await recharger(); }) }, "Marquer comme diffusée"),
+            el("button", { class: "danger", onclick: async () => {
+              if (!confirm("Supprimer cette météo ?")) return;
+              try { await api("DELETE", `meteo/${m.id}`); await recharger(); } catch (err) { dire(err.message, true); }
+            } }, "Supprimer"))));
+      const remarques = JSON.parse(m.remarques || "[]");
+      if (remarques.length) droite.append(el("h3", {}, `Remarques du co-pilote (${remarques.length})`),
+        el("div", { class: "liste" }, remarques.map(r => el("div", { class: "item" },
+          el("div", { class: "tete" }, pastille(r.gravite === "haute" ? "rouge" : r.gravite === "moyenne" ? "orange" : "neutre", "Gravité " + r.gravite),
+            pastille("neutre", r.origine === "règle" ? "Règle" : "Modèle"), el("span", { class: "titre" }, r.constat)),
+          el("div", { class: "detail" }, r.suggestion)))));
+      droite.append(el("h3", {}, etat.edition ? "Texte (Markdown)" : "Aperçu"),
+        etat.edition ? edition : el("div", { class: "rendu" }, rendu(m.contenu)));
+    }
+    v.append(el("div", { class: "deux" }, menu, droite));
+  }],
+};
+
+// Rendu Markdown minimal (titres, tableaux, listes, gras), sans innerHTML.
+function enLigne(texte) {
+  return texte.split(/(\*\*[^*]+\*\*)/).filter(Boolean).map(t =>
+    t.startsWith("**") ? el("strong", {}, t.slice(2, -2)) : t.startsWith("_") && t.endsWith("_") ? el("em", {}, t.slice(1, -1)) : t);
+}
+function rendu(md) {
+  const out = [], lignes = md.split("\n");
+  for (let i = 0; i < lignes.length; i++) {
+    const l = lignes[i];
+    if (!l.trim()) continue;
+    const t = /^(#{1,3}) (.*)/.exec(l);
+    if (t) { out.push(el("h" + t[1].length, {}, enLigne(t[2]))); continue; }
+    if (l.startsWith("|")) {
+      const rangs = [];
+      while (i < lignes.length && lignes[i].startsWith("|")) rangs.push(lignes[i++].slice(1, -1).split("|").map(c => c.trim()));
+      i--;
+      const corps = rangs.filter((r, n) => n !== 1 || !r.every(c => /^-+$/.test(c)));
+      out.push(el("table", {}, el("thead", {}, el("tr", {}, corps[0].map(c => el("th", {}, c)))),
+        el("tbody", {}, corps.slice(1).map(r => el("tr", {}, r.map(c => el("td", {}, enLigne(c))))))));
+      continue;
+    }
+    if (l.startsWith("- ")) {
+      const items = [];
+      while (i < lignes.length && lignes[i].startsWith("- ")) items.push(el("li", {}, enLigne(lignes[i++].slice(2))));
+      i--; out.push(el("ul", {}, items)); continue;
+    }
+    out.push(el("p", {}, enLigne(l)));
+  }
+  return out;
+}
+function telecharger(m) {
+  const a = el("a", { href: URL.createObjectURL(new Blob([m.contenu], { type: "text/markdown" })),
+    download: "meteo-" + m.cree_le + ".md" });
+  a.click(); URL.revokeObjectURL(a.href);
+}
+
+// ---------- navigation ----------
+const etat = { vue: "synthese", cr: null, meteo: null, edition: false };
+async function afficher(nom) {
+  etat.vue = nom;
+  for (const b of $("#onglets").children) b.setAttribute("aria-selected", b.dataset.vue === nom);
+  const v = el("div", {});
+  try { await VUES[nom][1](v); } catch (e) { v.append(el("div", { class: "vide" }, e.message)); }
+  if (etat.vue === nom) $("#vue").replaceChildren(v);
+}
+async function entete() {
+  const [m, e] = await Promise.all([api("GET", "mission"), api("GET", "etat")]);
+  $("#nom-mission").textContent = [m.nom, m.client].filter(Boolean).join(" — ");
+  const l = $("#etat-llm");
+  l.textContent = e.sdk_installe ? "Modèle : " + e.modele : "Modèle non installé";
+  l.title = e.sdk_installe ? (e.cle_presente ? "Clé d'API détectée." : "Aucune clé d'API dans l'environnement : les fonctions de rédaction peuvent échouer.")
+    : "Sans le paquet anthropic, l'extraction est indisponible et la météo est générée sans rédaction.";
+  l.className = "pastille " + (e.sdk_installe && e.cle_presente ? "vert" : "orange");
+}
+$("#onglets").append(...Object.entries(VUES).map(([cle, [lib]]) =>
+  el("button", { role: "tab", "data-vue": cle, onclick: () => afficher(cle) }, lib)));
+$("#btn-demo").addEventListener("click", async e => {
+  if (!confirm("Remplacer toutes les données par la mission de démonstration fictive ?")) return;
+  await pendant(e.target, "Chargement…", async () => { await api("POST", "demo"); await entete(); await afficher("synthese"); dire("Mission de démonstration chargée."); });
+});
+entete().then(() => afficher("synthese")).catch(e => dire(e.message, true));
+</script>
+</body>
+</html>
