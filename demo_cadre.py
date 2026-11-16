@@ -5,12 +5,50 @@ import json
 import calculs
 import db
 
-ROLES = ["Sponsor", "PM", "PO", "BA", "Design", "Architecte", "Tech lead", "Dev", "QA"]
+# Colonnes du RACI de démonstration : des métiers du catalogue.
+ROLES = ["Sponsor", "Pilotage de projet", "Product owner", "Business analyst", "UX / UI",
+         "Architecte", "Tech lead", "Développeur", "QA"]
+# Métier de chaque acteur de la démo, par rôle.
+METIER_PAR_ROLE = {
+    "Pilote de mission (PM)": "Pilotage de projet", "Product owner": "Product owner",
+    "Business analyst": "Business analyst", "Tech lead": "Tech lead",
+    "Architecte solutions": "Architecte", "Développeurs": "Développeur", "UX / UI": "UX / UI",
+    "QA": "QA", "Sponsor métier": "Sponsor", "Responsable réseau partenaires": "Métier",
+    "Référent conformité": "Conformité", "Juriste": "Juridique", "Offre et marketing": "Métier",
+    "Sponsor IT": "Sponsor", "Responsable SI Contrats": "IT", "Architecte d'entreprise": "Architecte",
+    "Responsable intégration": "DevOps", "Responsable homologation": "QA", "RSSI": "Sécurité",
+    "Fournisseur": "Prestataire", "Utilisateurs": "Métier",
+}
+# Participants des instances, par nom d'acteur.
+EQUIPE = ["Camille R.", "Idriss B.", "Léa T.", "Noé V.", "Sarah K.", "Équipe de 3", "Inès D.", "Hugo P."]
+PARTICIPANTS = {
+    "Mêlée quotidienne": EQUIPE,
+    "Planification de sprint": EQUIPE,
+    "Affinage du backlog": ["Idriss B.", "Léa T.", "Noé V.", "Équipe de 3", "Inès D."],
+    "Démonstration": EQUIPE + ["Marc L.", "Julie F.", "Courtiers pilotes"],
+    "Rétrospective": EQUIPE,
+    "Synchro hebdo": ["Camille R.", "Idriss B.", "Noé V.", "Équipe SI Contrats", "Pierre G.", "Homologation"],
+    "Comité sponsor": ["Marc L.", "Nadia O.", "Camille R.", "Idriss B."],
+}
+RECURRENCE = {"Mêlée quotidienne": "quotidienne", "Planification de sprint": "debut_sprint",
+              "Affinage du backlog": "hebdomadaire", "Démonstration": "fin_sprint",
+              "Rétrospective": "deux_sprints", "Synchro hebdo": "hebdomadaire",
+              "Comité sponsor": "mensuelle"}
+
+
+def _email(nom):
+    """Adresse fictive dans un domaine réservé aux exemples."""
+    if not nom.endswith("."):
+        return ""
+    prenom, initiale = nom.lower().rstrip(".").split()
+    for a, b in (("é", "e"), ("è", "e"), ("ï", "i"), ("ç", "c")):
+        prenom = prenom.replace(a, b)
+    return f"{prenom}.{initiale}@mutuelle-horizon.example"
 
 
 def charger(j):
     """`j(n)` renvoie la date ISO à n jours d'aujourd'hui."""
-    db.modifier("mission", 1, {"raci_roles": json.dumps(ROLES)})
+    db.modifier("mission", 1, {"raci_roles": json.dumps([f"metier:{r}" for r in ROLES])})
 
     for rang, (nom, titre, periode, date, statut) in enumerate([
         ("V1", "Portail courtiers", "Février 2027", j(84), "en cours"),
@@ -131,6 +169,7 @@ def charger(j):
         ("Courtiers pilotes", "Utilisateurs", "externe", "Réseau", "Tests utilisateurs et pilote"),
     ]:
         db.creer("acteur", {"nom": nom, "role": role, "cercle": cercle, "entite": entite,
+                            "metier": METIER_PAR_ROLE.get(role, ""), "email": _email(nom),
                             "adherence": adherence})
 
     for rang, (nom, chantier, objectifs, participants, frequence, duree) in enumerate([
@@ -183,9 +222,16 @@ def charger(j):
         ("Mise en œuvre", "Recette métier",                 "I I A R - - I C R"),
         ("Transverse", "Continuous discovery",              "I C A R R C I I I"),
     ]):
-        valeurs = {r: x for r, x in zip(ROLES, v.split()) if x != "-"}
+        valeurs = {f"metier:{r}": x for r, x in zip(ROLES, v.split()) if x != "-"}
         db.creer("raci", {"domaine": domaine, "activite": activite, "rang": rang,
                           "valeurs": json.dumps(valeurs, ensure_ascii=False)})
+
+    par_nom = {x["nom"]: x["id"] for x in db.lister("acteur")}
+    for inst in db.lister("instance"):
+        db.modifier("instance", inst["id"], {
+            "participants_ids": json.dumps([par_nom[n] for n in PARTICIPANTS.get(inst["nom"], []) if n in par_nom]),
+            "recurrence": RECURRENCE.get(inst["nom"], ""),
+        })
 
     # Session précédente fictive, pour que l'évolution des risques ait un point de comparaison.
     risques = db.lister("risque")

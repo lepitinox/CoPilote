@@ -63,7 +63,10 @@ const tuile = (nom, valeur, note) => el("div", { class: "carte tuile" },
   el("div", { class: "nom" }, nom), el("div", { class: "valeur" }, valeur), note && el("div", { class: "note" }, note));
 
 // Références partagées entre vues (noms des lots pour les listes et les couleurs).
-const ref = { lots: [] };
+const ref = { lots: [], acteurs: [], metiers: [], recurrences: {}, exports: null };
+const nomsMetiers = () => [["", "—"], ...ref.metiers.map(m => [m.nom, m.nom])];
+const acteurParId = id => ref.acteurs.find(a => a.id === Number(id));
+const idsDe = v => { try { const l = JSON.parse(v || "[]"); return Array.isArray(l) ? l.map(Number) : []; } catch (e) { return []; } };
 const classeLot = nom => { const i = ref.lots.indexOf(nom); return "lot-" + (i < 0 || i > 2 ? 3 : i); };
 const pastilleLot = nom => (nom ? pastille(classeLot(nom), nom) : "—");
 const nomsLots = () => (ref.lots.length ? ref.lots : ["V1"]);
@@ -116,14 +119,22 @@ const ENTITES = {
   activite: { nom: "activité du planning", champs: [
     ["piste", "Piste (ligne du planning)", "texte"], ["libelle", "Activité", "texte"],
     ["debut", "Début", "date"], ["fin", "Fin", "date"]] },
+  metier: { nom: "métier", champs: [["nom", "Métier", "texte"], ["rang", "Ordre d'affichage", "nombre"]] },
   acteur: { nom: "acteur", champs: [
     ["nom", "Nom", "texte"], ["role", "Rôle", "texte"],
+    ["metier", "Métier", "choix", nomsMetiers], ["email", "E-mail (pour les invitations)", "texte"],
     ["cercle", "Cercle", "choix", ["équipe projet", "métier", "IT", "externe"]], ["entite", "Entité ou pôle", "texte"],
     ["adherence", "Adhérence avec l'équipe projet", "long", null, true]] },
   instance: { nom: "instance", champs: [
     ["nom", "Instance", "texte"], ["chantier", "Chantier", "texte"],
-    ["objectifs", "Objectifs (un par ligne)", "long", null, true], ["participants", "Participants", "texte", null, true],
-    ["frequence", "Fréquence", "texte"], ["duree", "Durée", "texte"], ["rang", "Ordre d'affichage", "nombre"]] },
+    ["objectifs", "Objectifs (un par ligne)", "long", null, true],
+    ["participants_ids", "Participants (personnes de l'organisation)", "personnes", null, true],
+    ["participants", "Autres participants (texte libre)", "texte", null, true],
+    ["recurrence", "Récurrence", "choix", () => [["", "—"], ...Object.entries(ref.recurrences)]],
+    ["frequence", "Fréquence (libellé affiché)", "texte"],
+    ["premiere", "Première séance", "date"], ["heure", "Heure", "heure"],
+    ["duree_min", "Durée (minutes)", "nombre"], ["duree", "Durée (libellé affiché)", "texte"],
+    ["rang", "Ordre d'affichage", "nombre"]] },
   raci: { nom: "activité du RACI", champs: [
     ["domaine", "Domaine", "texte"], ["rang", "Ordre d'affichage", "nombre"],
     ["activite", "Activité", "texte", null, true]] },
@@ -138,6 +149,14 @@ function formulaire(type, objet, apres, defauts = {}) {
       const liste = (typeof options === "function" ? options() : options).map(o => (Array.isArray(o) ? o : [o, o]));
       if (v !== "" && !liste.some(o => o[0] === v)) liste.push([v, v]);
       s = el("select", {}, liste.map(([val, texte]) => el("option", { value: val, selected: val === v }, texte)));
+    } else if (genre === "personnes") {
+      const choisis = new Set(idsDe(v));
+      const cases = ref.acteurs.map(a => el("label", { class: "case", style: "font-size:14px" },
+        el("input", { type: "checkbox", value: a.id, checked: choisis.has(a.id) }),
+        a.nom, el("span", { style: "color:var(--doux)" }, " · " + (a.metier || a.role || ""))));
+      s = el("div", { class: "personnes" }, cases.length ? cases : el("span", { style: "color:var(--doux)" }, "Aucune personne dans l'organisation."));
+      saisies[cle] = [s, genre];
+      return el("div", { class: large ? "large" : "" }, el("div", { style: "font-size:13px;color:var(--doux);margin-bottom:4px" }, lib), s);
     } else if (genre === "case") {
       s = el("input", { type: "checkbox", checked: !!v });
       saisies[cle] = [s, genre];
@@ -146,7 +165,7 @@ function formulaire(type, objet, apres, defauts = {}) {
       s = el("textarea", {}); s.value = v;
       if (cle === "texte") s.style.minHeight = "240px";
     } else {
-      s = el("input", { type: genre === "date" ? "date" : genre === "nombre" ? "number" : "text", step: "any" });
+      s = el("input", { type: { date: "date", nombre: "number", heure: "time" }[genre] || "text", step: genre === "heure" ? 300 : "any" });
       s.value = v;
     }
     saisies[cle] = [s, genre];
@@ -156,7 +175,8 @@ function formulaire(type, objet, apres, defauts = {}) {
     e.preventDefault();
     const corps = {};
     for (const [cle, [s, genre]] of Object.entries(saisies))
-      corps[cle] = genre === "nombre" ? (s.value === "" ? null : Number(s.value)) : genre === "case" ? (s.checked ? 1 : 0) : s.value;
+      corps[cle] = genre === "nombre" ? (s.value === "" ? null : Number(s.value)) : genre === "case" ? (s.checked ? 1 : 0)
+        : genre === "personnes" ? JSON.stringify([...s.querySelectorAll("input:checked")].map(c => Number(c.value))) : s.value;
     try {
       if (objet) await api("PUT", `${type}/${objet.id}`, corps); else await api("POST", type, corps);
       d.close(); await apres();
@@ -193,8 +213,70 @@ function section(titre, type, lignes, colonnes, apres) {
 }
 const titreVue = (titre, aide, ...actions) => [
   el("div", { class: "barre", style: "margin-top:0" }, el("h2", { style: "margin:0;font-size:20px" }, titre),
-    el("span", { class: "pousse" }), actions),
+    el("span", { class: "pousse" }), actions, boutonsExport(etat.vue)),
   el("p", { class: "aide" }, aide)];
+
+// ---------- exports PowerPoint / Excel ----------
+async function telechargerFichier(url, bouton) {
+  const tache = async () => {
+    const r = await fetch(url);
+    if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.erreur || "Erreur " + r.status); }
+    const nom = decodeURIComponent((/filename\*=UTF-8''([^;]+)/.exec(r.headers.get("Content-Disposition") || "") || [])[1] || "export");
+    const a = el("a", { href: URL.createObjectURL(await r.blob()), download: nom });
+    document.body.append(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
+  };
+  if (bouton) return pendant(bouton, "…", tache);
+  try { await tache(); } catch (e) { dire(e.message, true); }
+}
+function boutonsExport(vue) {
+  const ex = ref.exports;
+  if (!ex || !ex.libelles[vue]) return null;
+  const extra = vue === "meteo" && etat.meteo ? "?meteo=" + etat.meteo : "";
+  return el("span", { class: "exports" },
+    el("button", { title: "Exporter cette vue en PowerPoint", onclick: e => telechargerFichier(`/api/export/${vue}.pptx${extra}`, e.target) }, "PowerPoint"),
+    !ex.sans_excel.includes(vue) && el("button", { title: "Exporter cette vue en Excel", onclick: e => telechargerFichier(`/api/export/${vue}.xlsx`, e.target) }, "Excel"),
+    el("button", { title: "Modèles d'export de cette vue", onclick: () => dialogueModeles(vue) }, "Modèles"));
+}
+function dialogueModeles(vue) {
+  const d = $("#dialogue"), ex = ref.exports;
+  const source = ext => (ex.vues[vue]?.[ext] ? "propre à cette vue" : ex.commun[ext] ? "modèle commun" : "modèle par défaut");
+  const envoyer = (cible, ext) => {
+    const choix = el("input", { type: "file", accept: "." + ext, style: "display:none" });
+    choix.addEventListener("change", async () => {
+      const f = choix.files[0]; if (!f) return;
+      try {
+        const r = await fetch(`/api/modele/${cible}.${ext}`, { method: "PUT", headers: { "Content-Type": "application/octet-stream" }, body: f });
+        const res = await r.json(); if (!r.ok) throw new Error(res.erreur);
+        Object.assign(ex, res); dire("Modèle enregistré."); dialogueModeles(vue);
+      } catch (e) { dire(e.message, true); }
+    });
+    document.body.append(choix); choix.click(); setTimeout(() => choix.remove(), 60000);
+  };
+  const retirer = async (cible, ext) => {
+    try { Object.assign(ex, await api("DELETE", `modele/${cible}.${ext}`)); dire("Modèle retiré."); dialogueModeles(vue); }
+    catch (e) { dire(e.message, true); }
+  };
+  const bloc = (ext, libelle) => el("div", { class: "carte", style: "display:grid;gap:8px" },
+    el("div", {}, el("b", {}, libelle), " — utilisé actuellement : ", pastille("neutre", source(ext))),
+    el("div", { class: "barre", style: "margin:0" },
+      el("button", { onclick: e => telechargerFichier(`/api/modele/${vue}.${ext}`, e.target) }, "Télécharger le modèle"),
+      el("button", { onclick: () => envoyer(vue, ext) }, "Remplacer pour cette vue"),
+      el("button", { onclick: () => envoyer("commun", ext) }, "Remplacer pour toutes les vues")),
+    (ex.vues[vue]?.[ext] || ex.commun[ext]) && el("div", { class: "barre", style: "margin:0" },
+      ex.vues[vue]?.[ext] && el("button", { class: "danger", onclick: () => retirer(vue, ext) }, "Retirer le modèle de cette vue"),
+      ex.commun[ext] && el("button", { class: "danger", onclick: () => retirer("commun", ext) }, "Retirer le modèle commun")));
+  d.replaceChildren(el("form", { method: "dialog" },
+    el("h3", {}, "Modèles d'export — " + ex.libelles[vue]),
+    el("p", { class: "aide", style: "margin:0" },
+      "Téléchargez le modèle, modifiez-le dans PowerPoint ou Excel, puis renvoyez-le. Jetons remplacés à l'export : {{titre}}, {{mission}}, {{date}}."),
+    el("ul", { class: "aide", style: "margin:0;padding-left:18px" },
+      el("li", {}, "PowerPoint : le masque des diapositives donne les couleurs, polices, logo et pied de page ; les diapositives présentes dans le modèle (page de garde) sont conservées."),
+      el("li", {}, "Excel : la première feuille sert de gabarit pour chaque onglet ; la cellule {{contenu}} indique où écrire et donne le style des en-têtes, la cellule au-dessous celui des lignes.")),
+    bloc("pptx", "PowerPoint"),
+    !ex.sans_excel.includes(vue) && bloc("xlsx", "Excel"),
+    el("div", { class: "barre" }, el("span", { class: "pousse" }), el("button", { class: "principal" }, "Fermer"))));
+  if (!d.open) d.showModal();
+}
 
 // ---------- navigation ----------
 // VUES[clé] = [libellé du menu, groupe, fonction de rendu]
@@ -210,7 +292,12 @@ async function afficher(nom) {
   for (const b of document.querySelectorAll("#menu button")) b.setAttribute("aria-current", b.dataset.vue === nom ? "page" : "false");
   const v = el("div", {});
   try {
-    ref.lots = (await api("GET", "lot")).map(l => l.nom);
+    const [lots, acteurs, metiers] = await Promise.all([api("GET", "lot"), api("GET", "acteur"), api("GET", "metier")]);
+    ref.lots = lots.map(l => l.nom); ref.acteurs = acteurs; ref.metiers = metiers;
+    if (!ref.exports) {
+      const [ex, ag] = await Promise.all([api("GET", "modeles"), api("GET", "agenda")]);
+      ref.exports = ex; ref.recurrences = ag.recurrences;
+    }
     await VUES[nom][2](v);
   } catch (e) { v.append(el("div", { class: "vide" }, e.message)); }
   if (etat.vue === nom) $("#vue").replaceChildren(v);

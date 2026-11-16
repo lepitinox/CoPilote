@@ -5,13 +5,16 @@ import os
 import re
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import agenda  # noqa: E402
 import calculs  # noqa: E402
 import db  # noqa: E402
 import demo  # noqa: E402
+import donnees  # noqa: E402
+import exports  # noqa: E402
 import llm  # noqa: E402
 import meteo  # noqa: E402
 
@@ -20,7 +23,7 @@ STATIQUE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 PAGE = os.path.join(STATIQUE, "index.html")
 TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8"}
 EDITABLES = {"jalon", "livrable", "sprint", "risque", "decision", "compte_rendu",
-             "lot", "lot_element", "story", "activite", "acteur", "instance", "raci"}
+             "lot", "lot_element", "story", "activite", "acteur", "instance", "raci", "metier"}
 LISIBLES = EDITABLES | {"proposition", "meteo"}
 TENDANCES = ("vert", "orange", "rouge")
 
@@ -31,42 +34,34 @@ class Erreur(Exception):
         self.code = code
 
 
+class Fichier:
+    """Réponse à télécharger plutôt qu'un objet JSON."""
+    def __init__(self, contenu, genre, nom):
+        self.contenu = contenu if isinstance(contenu, bytes) else contenu.encode("utf-8")
+        self.genre, self.nom = genre, nom
+
+
+GENRES = {
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "ics": "text/calendar; charset=utf-8",
+}
+
+
 def aujourdhui():
     return dt.date.today()
 
 
 def etat_mission():
-    return (db.mission(), db.lister("jalon"), db.lister("livrable"), db.lister("sprint"),
-            db.lister("risque"), db.lister("decision"))
+    return donnees.etat_mission()
 
 
 def synthese():
-    d = meteo.donnees(*etat_mission(), aujourdhui())
-    return {
-        "semaine": d["semaine"], "tendance": d["tendance_calculee"], "alertes": d["alertes"],
-        "kpi": d["kpi"], "atterrissage": d["atterrissage"],
-        "seuils": calculs.seuils(db.mission()),
-        "propositions_en_attente": len(db.lister("proposition", "statut = 'en attente'")),
-        "risques_ouverts": len(d["risques_ouverts"]),
-        "decisions_a_prendre": len(d["decisions_a_prendre"]),
-    }
+    return donnees.synthese(aujourdhui())
 
 
 def suivi_risques():
-    """Registre avec l'évolution depuis la dernière session (dernière météo générée)."""
-    reference, photo = None, None
-    meteos = db.lister("meteo")  # la plus récente d'abord
-    auj = aujourdhui().isoformat()
-    # Une météo générée aujourd'hui décrit la session en cours, pas la précédente.
-    for m in [x for x in meteos if (x.get("cree_le") or "") < auj] or meteos:
-        try:
-            photo = json.loads(m.get("risques_instantane") or "null")
-        except ValueError:
-            photo = None
-        if photo is not None:
-            reference = {"semaine": m["semaine"], "date": m["cree_le"]}
-            break
-    return {"reference": reference, "risques": calculs.evolution(db.lister("risque"), photo)}
+    return donnees.suivi_risques(aujourdhui())
 
 
 def extraire(cr_id):
@@ -222,6 +217,21 @@ class Requete(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(corps)
 
+    def _fichier(self, f):
+        self.send_response(200)
+        self.send_header("Content-Type", f.genre)
+        self.send_header("Content-Length", str(len(f.contenu)))
+        self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(f.nom)}")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(f.contenu)
+
+    def _octets(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        if n > exports.TAILLE_MAX_MODELE:
+            raise Erreur("Fichier trop volumineux (25 Mo au plus).", 413)
+        return self.rfile.read(n) if n else b""
+
     def _corps(self):
         n = int(self.headers.get("Content-Length") or 0)
         if not n:
@@ -240,10 +250,16 @@ class Requete(BaseHTTPRequestHandler):
             hote = (self.headers.get("Host") or "").split(":")[0]
             if hote not in ("127.0.0.1", "localhost"):
                 raise Erreur("Hôte refusé.", 403)
-            chemin = urlparse(self.path).path.rstrip("/") or "/"
+            adresse = urlparse(self.path)
+            chemin = adresse.path.rstrip("/") or "/"
+            self.requete = parse_qs(adresse.query)
             resultat = self._router(methode, chemin)
-            if resultat is not None:
+            if isinstance(resultat, Fichier):
+                self._fichier(resultat)
+            elif resultat is not None:
                 self._json(resultat)
+        except exports.ErreurExport as e:
+            self._json({"erreur": str(e)}, 400)
         except Erreur as e:
             self._json({"erreur": str(e)}, e.code)
         except llm.LLMIndisponible as e:
@@ -269,6 +285,25 @@ class Requete(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(corps)
             return None
+        export = re.fullmatch(r"/api/export/(\w+)\.(pptx|xlsx)", chemin)
+        if export and methode == "GET":
+            meteo_id = (self.requete.get("meteo") or [""])[0]
+            octets, nom = exports.exporter(export.group(1), export.group(2),
+                                           int(meteo_id) if meteo_id.isdigit() else None, aujourdhui())
+            return Fichier(octets, GENRES[export.group(2)], nom)
+        modele = re.fullmatch(r"/api/modele/(\w+)\.(pptx|xlsx)", chemin)
+        if modele:
+            cible, ext = modele.groups()
+            if cible != "commun" and cible not in exports.LIBELLES:
+                raise Erreur("Vue inconnue.", 404)
+            if methode == "GET":
+                return Fichier(exports.octets_modele(cible, ext), GENRES[ext], f"modele-{cible}.{ext}")
+            if methode == "PUT":
+                exports.enregistrer_modele(cible, ext, self._octets())
+                return exports.etat_modeles()
+            if methode == "DELETE":
+                exports.supprimer_modele(cible, ext)
+                return exports.etat_modeles()
         m = re.fullmatch(r"/api/(\w+)(?:/(\d+))?(?:/(\w+))?", chemin)
         if not m:
             raise Erreur("Ressource inconnue.", 404)
@@ -284,8 +319,21 @@ class Requete(BaseHTTPRequestHandler):
                 return synthese()
             if nom == "suivi_risques":
                 return suivi_risques()
-            if nom in LISIBLES:
+            if nom == "agenda":
+                return {**agenda.calendrier(aujourdhui()), "recurrences": agenda.RECURRENCES}
+            if nom == "modeles":
+                return {**exports.etat_modeles(), "libelles": exports.LIBELLES,
+                        "sans_excel": sorted(exports.SANS_EXCEL)}
+            if nom in LISIBLES and not action:
                 return db.lister(nom)
+        if methode == "GET" and nom == "instance" and action == "ics":
+            liste = [db.lire("instance", ident)] if ident else db.lister("instance")
+            if not liste or liste[0] is None:
+                raise Erreur("Instance introuvable.", 404)
+            if not any(i.get("premiere") and i.get("heure") for i in liste):
+                raise Erreur("Aucun créneau posé : proposez d'abord des créneaux.")
+            nom_fichier = "reunions" if not ident else re.sub(r"[^\w-]+", "-", liste[0]["nom"].lower()).strip("-")
+            return Fichier(agenda.ics(liste, aujourdhui()), GENRES["ics"], f"{nom_fichier}.ics")
         if methode == "POST":
             if nom == "demo" and not ident:
                 demo.charger(aujourdhui())
@@ -300,6 +348,8 @@ class Requete(BaseHTTPRequestHandler):
                 return generer_meteo()
             if nom == "meteo" and ident and action == "challenger":
                 return challenger_meteo(ident)
+            if nom == "instance" and not ident and action == "proposer":
+                return agenda.proposer(bool(self._corps().get("tout")), aujourdhui())
             if nom in EDITABLES and not ident:
                 corps = self._corps()
                 if nom in ("risque", "decision"):

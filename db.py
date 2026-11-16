@@ -24,11 +24,16 @@ TABLES = {
     "story": {"etape": "TEXT", "rang_etape": "INTEGER", "libelle": "TEXT", "lot": "TEXT",
               "irritant": "INTEGER", "innovation": "INTEGER"},
     "activite": {"piste": "TEXT", "libelle": "TEXT", "debut": "TEXT", "fin": "TEXT"},
+    # Catalogue des métiers : prérempli, modifiable. Sert à l'organisation et au RACI.
+    "metier": {"nom": "TEXT", "rang": "INTEGER"},
     "acteur": {"nom": "TEXT", "role": "TEXT", "cercle": "TEXT", "entite": "TEXT",
-               "adherence": "TEXT"},
+               "adherence": "TEXT", "metier": "TEXT", "email": "TEXT"},
+    # participants_ids : liste JSON d'identifiants d'acteurs.
+    # recurrence, premiere (date), heure (HH:MM), duree_min : créneau de la réunion.
     "instance": {"nom": "TEXT", "chantier": "TEXT", "objectifs": "TEXT",
                  "participants": "TEXT", "frequence": "TEXT", "duree": "TEXT",
-                 "rang": "INTEGER"},
+                 "rang": "INTEGER", "participants_ids": "TEXT", "recurrence": "TEXT",
+                 "premiere": "TEXT", "heure": "TEXT", "duree_min": "INTEGER"},
     "raci": {"domaine": "TEXT", "activite": "TEXT", "valeurs": "TEXT", "rang": "INTEGER"},
     "jalon": {"libelle": "TEXT", "date": "TEXT", "version": "TEXT", "statut": "TEXT"},
     "livrable": {
@@ -69,8 +74,14 @@ ORDRE = {
     "compte_rendu": "date DESC, id DESC", "proposition": "id", "meteo": "id DESC",
     "lot": "rang, id", "lot_element": "id", "story": "rang_etape, id",
     "activite": "debut, id", "acteur": "cercle, entite, id", "instance": "rang, id",
-    "raci": "rang, id",
+    "raci": "rang, id", "metier": "rang, nom",
 }
+
+METIERS_DEFAUT = [
+    "Sponsor", "Pilotage de projet", "Product owner", "Business analyst", "UX / UI",
+    "Architecte", "Tech lead", "Développeur", "QA", "Data", "DevOps", "Sécurité",
+    "Conformité", "Juridique", "Métier", "IT", "Change", "Prestataire",
+]
 
 
 def connexion():
@@ -94,6 +105,9 @@ def initialiser():
                 "INSERT INTO mission (id, nom, duree_sprint_jours, seuils) VALUES (1, ?, 14, ?)",
                 ("Nouvelle mission", "{}"),
             )
+        if not c.execute("SELECT 1 FROM metier").fetchone():
+            c.executemany("INSERT INTO metier (nom, rang) VALUES (?, ?)",
+                          [(n, i) for i, n in enumerate(METIERS_DEFAUT)])
 
 
 def vider():
@@ -157,4 +171,25 @@ def mission():
             m[cle] = json.loads(m.get(cle) or "null") or defaut
         except ValueError:
             m[cle] = defaut
+    # Colonnes du RACI : "metier:<nom>" ou "acteur:<id>". Les anciennes bases stockaient
+    # un simple libellé de rôle : on le lit comme un métier.
+    m["raci_roles"] = [c if ":" in str(c) else f"metier:{c}" for c in m["raci_roles"]]
     return m
+
+
+def ids(valeur):
+    """Liste d'identifiants stockée en JSON ; tolère une valeur vide ou illisible."""
+    try:
+        liste = json.loads(valeur or "[]")
+    except ValueError:
+        return []
+    return [int(x) for x in liste if str(x).isdigit()] if isinstance(liste, list) else []
+
+
+def valeurs_raci(ligne):
+    """Valeurs d'une ligne du RACI, clés normalisées comme les colonnes."""
+    try:
+        v = json.loads(ligne.get("valeurs") or "{}") or {}
+    except ValueError:
+        v = {}
+    return {(k if ":" in k else f"metier:{k}"): x for k, x in v.items()}

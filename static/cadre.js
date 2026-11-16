@@ -130,10 +130,17 @@ VUES.planning = ["Macro-planning", CADRE, async v => {
 
 // ---------- 5. Organisation : l'entreprise en adhérence avec l'équipe projet ----------
 VUES.organisation = ["Organisation", CADRE, async v => {
-  const acteurs = await api("GET", "acteur");
+  const acteurs = ref.acteurs;
   v.append(titreVue("Organisation",
-    "L'équipe projet au centre, entourée des entités du client et des externes. Les acteurs encadrés en orange sont en adhérence avec l'équipe : ils conditionnent un livrable ou une validation.",
+    "L'équipe projet au centre, entourée des entités du client et des externes. Les acteurs encadrés en orange sont en adhérence avec l'équipe : ils conditionnent un livrable ou une validation. Chaque personne est ensuite utilisable dans le RACI et dans les réunions.",
     boutonAjout("acteur", "Ajouter un acteur")));
+  const utilisations = nom => acteurs.filter(a => a.metier === nom).length;
+  v.append(el("div", { class: "carte", style: "margin-bottom:14px" },
+    el("div", { class: "barre", style: "margin:0 0 8px" }, el("b", {}, "Métiers"),
+      el("span", { style: "color:var(--doux);font-size:13px" }, "Catalogue commun à l'organisation et au RACI. Cliquez sur un métier pour le renommer ou le supprimer."),
+      el("button", { class: "pousse", onclick: () => formulaire("metier", null, recharger, { rang: ref.metiers.length }) }, "Ajouter un métier")),
+    el("div", { class: "metiers" }, ref.metiers.map(m => el("button", { class: "pastille neutre", title: "Modifier",
+      onclick: () => formulaire("metier", m, recharger) }, m.nom, utilisations(m.nom) ? ` · ${utilisations(m.nom)}` : "")))));
   if (!acteurs.length) { v.append(el("div", { class: "vide" }, "Aucun acteur.")); return; }
   const zone = (cercle, titre, sous, classe) => {
     const membres = acteurs.filter(a => a.cercle === cercle);
@@ -143,7 +150,7 @@ VUES.organisation = ["Organisation", CADRE, async v => {
       entites.map(e => [e && el("div", { class: "entite" }, e),
         el("div", { class: "acteurs" }, membres.filter(a => (a.entite || "") === e).map(a =>
           el("button", { class: "puce" + (a.adherence ? " lie" : ""), title: "Modifier", onclick: () => formulaire("acteur", a, recharger) },
-            el("b", {}, a.role || "—"), el("small", {}, a.nom),
+            el("b", {}, a.role || "—"), el("small", {}, a.nom, a.metier ? [" · ", el("span", { class: "chip", style: "margin:0;font-size:11.5px" }, a.metier)] : null),
             a.adherence && el("small", { class: "lien-adh" }, "Adhérence : " + a.adherence))))]),
       el("button", { class: "lien", style: "font-size:13px;margin-top:8px", onclick: () => formulaire("acteur", null, recharger, { cercle }) }, "Ajouter"));
   };
@@ -154,25 +161,67 @@ VUES.organisation = ["Organisation", CADRE, async v => {
     zone("externe", "Externes", "Partenaires, éditeurs, utilisateurs", "externe")));
 }];
 
-// ---------- 6. Gouvernance : les instances ----------
+// ---------- 6. Gouvernance : les instances et leurs créneaux ----------
+const JOURS_FR = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
+function creneauInstance(i) {
+  const d = jour(i.premiere);
+  if (!d || !i.heure) return pastille("orange", "À poser");
+  if (i.recurrence === "quotidienne") return `Chaque jour ouvré à ${i.heure}`;
+  return [el("b", {}, `${JOURS_FR[d.getDay()]} ${i.heure}`), el("div", { style: "color:var(--doux);font-size:12.5px" },
+    (ref.recurrences[i.recurrence] || "") + (i.recurrence === "ponctuelle" ? ` le ${dateFr(i.premiere)}` : `, dès le ${dateFr(i.premiere)}`))];
+}
 VUES.gouvernance = ["Gouvernance", CADRE, async v => {
-  const instances = await api("GET", "instance");
+  const [instances, ag] = await Promise.all([api("GET", "instance"), api("GET", "agenda")]);
+  const sansCreneau = instances.filter(i => !(i.premiere && i.heure) && i.recurrence !== "ponctuelle");
+  const proposer = tout => async e => {
+    if (tout && !confirm("Reproposer un créneau pour toutes les instances ? Les créneaux actuels seront remplacés.")) return;
+    await pendant(e.target, "Calcul…", async () => {
+      const r = await api("POST", "instance/proposer", { tout });
+      dire(r.length ? `${r.length} créneau(x) proposé(s), sans chevauchement.` : "Toutes les instances ont déjà un créneau."); await recharger();
+    });
+  };
   v.append(titreVue("Gouvernance",
-    "Les instances du projet : à quoi elles servent, qui y participe, à quel rythme. La remontée d'alertes suit la chaîne mêlée quotidienne → synchro hebdo → comité sponsor.",
+    "Les instances du projet : à quoi elles servent, qui y participe, à quel rythme. Le co-pilote propose des créneaux à partir du rythme des sprints, sans chevauchement ni réunion sur la pause de midi ; le fichier d'invitations s'importe dans Outlook ou Google Agenda.",
     boutonAjout("instance", "Ajouter une instance")));
   if (!instances.length) { v.append(el("div", { class: "vide" }, "Aucune instance.")); return; }
+  v.append(el("div", { class: "barre" },
+    el("button", { class: sansCreneau.length ? "principal" : "", onclick: proposer(false) },
+      sansCreneau.length ? `Proposer des créneaux (${sansCreneau.length} à poser)` : "Proposer des créneaux"),
+    el("button", { onclick: proposer(true) }, "Tout reproposer"),
+    el("button", { onclick: e => telechargerFichier("/api/instance/ics", e.target) }, "Télécharger les invitations (.ics)")));
   const chantiers = [...new Set(instances.map(i => i.chantier || "Autres"))];
   v.append(el("div", { class: "cadre-table" }, el("table", {},
-    el("thead", {}, el("tr", {}, ["Instance", "Objectifs", "Participants", "Fréquence", "Durée"].map(c => el("th", {}, c)))),
+    el("thead", {}, el("tr", {}, ["Instance", "Objectifs", "Participants", "Créneau", "Durée", ""].map(c => el("th", {}, c)))),
     el("tbody", {}, chantiers.map(c => [
-      el("tr", { class: "domaine" }, el("td", { colspan: 5, style: "background:#fafbfc;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--doux)" }, c)),
-      instances.filter(i => (i.chantier || "Autres") === c).map(i => el("tr", { class: "cliquable", tabindex: 0, title: "Modifier",
-        onclick: () => formulaire("instance", i, recharger), onkeydown: e => { if (e.key === "Enter") formulaire("instance", i, recharger); } },
-        el("td", { style: "font-weight:600;min-width:150px" }, i.nom),
-        el("td", {}, el("ul", { style: "margin:0;padding-left:18px" }, (i.objectifs || "").split("\n").filter(Boolean).map(o => el("li", {}, o)))),
-        el("td", { class: "long" }, i.participants || "—"),
-        el("td", {}, pastille("neutre", i.frequence || "—")),
-        el("td", { style: "white-space:nowrap" }, i.duree || "—")))])))));
+      el("tr", { class: "domaine" }, el("td", { colspan: 6, style: "background:#fafbfc;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--doux)" }, c)),
+      instances.filter(i => (i.chantier || "Autres") === c).map(i => {
+        const personnes = idsDe(i.participants_ids).map(acteurParId).filter(Boolean);
+        const sansEmail = personnes.filter(p => !(p.email || "").trim()).length;
+        return el("tr", { class: "cliquable", tabindex: 0, title: "Modifier",
+          onclick: () => formulaire("instance", i, recharger), onkeydown: e => { if (e.key === "Enter") formulaire("instance", i, recharger); } },
+          el("td", { style: "font-weight:600;min-width:140px" }, i.nom, el("div", { style: "font-weight:400;color:var(--doux);font-size:12.5px" }, i.frequence || "")),
+          el("td", {}, el("ul", { style: "margin:0;padding-left:18px" }, (i.objectifs || "").split("\n").filter(Boolean).map(o => el("li", {}, o)))),
+          el("td", { style: "min-width:200px;max-width:320px" },
+            personnes.map(p => el("span", { class: "chip", title: [p.role, p.metier, p.email].filter(Boolean).join(" · ") }, p.nom)),
+            i.participants && el("div", { style: "color:var(--doux);font-size:12.5px" }, i.participants),
+            !personnes.length && !i.participants ? "—" : null,
+            sansEmail ? el("div", { style: "color:var(--orange);font-size:12px" }, `${sansEmail} sans e-mail : absent(s) de l'invitation`) : null),
+          el("td", { style: "min-width:150px" }, creneauInstance(i)),
+          el("td", { style: "white-space:nowrap" }, i.duree_min ? `${i.duree_min} min` : i.duree || "—"),
+          el("td", {}, i.premiere && i.heure ? el("button", { title: "Invitation de cette instance (.ics)",
+            onclick: e => { e.stopPropagation(); telechargerFichier(`/api/instance/${i.id}/ics`, e.target); } }, ".ics") : null));
+      })])))));
+
+  const auj = new Date(); auj.setHours(0, 0, 0, 0);
+  v.append(el("h3", {}, `Calendrier type du sprint — du ${dateFr(ag.debut)} au ${dateFr(ag.fin)}`),
+    el("div", { class: "defile" }, el("div", { class: "agenda" }, ag.jours.map(j => el("div", { class: "jour" + (jour(j.date) < auj ? " passe" : "") },
+      el("h4", {}, `${j.jour} ${dateFr(j.date).replace(/ \d{4}$/, "")}`),
+      j.seances.map(s => el("button", { class: "seance", title: "Modifier l'instance",
+        onclick: () => { const i = instances.find(x => x.id === s.id); if (i) formulaire("instance", i, recharger); } },
+        el("b", {}, `${s.debut} – ${s.fin}`), s.nom)))))),
+    (ag.hors_sprint.length || ag.non_planifiees.length) ? el("p", { class: "aide", style: "margin-top:8px" },
+      ag.hors_sprint.length ? "Hors de ce sprint : " + ag.hors_sprint.map(h => `${h.nom} le ${dateFr(h.date)} à ${h.heure}`).join(" ; ") + ". " : "",
+      ag.non_planifiees.length ? "Sans créneau : " + ag.non_planifiees.map(n => n.nom).join(", ") + "." : "") : null);
 }];
 
 // ---------- 7. Rappel : déroulé d'un sprint et KPI à collecter ----------
@@ -216,42 +265,80 @@ VUES.sprintkpi = ["Sprint et KPI", CADRE, async v => {
 }];
 
 // ---------- 8. RACI ----------
+// Colonnes : des métiers du catalogue ("metier:<nom>") et/ou des personnes de l'organisation ("acteur:<id>").
+const cleRaci = k => (String(k).includes(":") ? String(k) : "metier:" + k);
+function colonneRaci(cle) {
+  const [genre, val] = cle.split(/:(.*)/s);
+  if (genre === "acteur") {
+    const a = acteurParId(val);
+    return { titre: a ? a.nom : "Personne supprimée", precision: a ? (a.metier || a.role || "") : "", personne: true };
+  }
+  const noms = ref.acteurs.filter(a => a.metier === val).map(a => a.nom);
+  return { titre: val, precision: noms.slice(0, 2).join(", ") + (noms.length > 2 ? ` +${noms.length - 2}` : ""), personne: false };
+}
+function choisirColonnesRaci(actuelles) {
+  const d = $("#dialogue");
+  const cases = cle => el("input", { type: "checkbox", value: cle, checked: actuelles.includes(cle) });
+  const groupe = (titre, items) => el("div", {}, el("div", { style: "font-weight:600;margin-bottom:4px" }, titre),
+    el("div", { class: "personnes", style: "max-height:220px" }, items));
+  d.replaceChildren(el("form", { method: "dialog", onsubmit: async e => {
+    e.preventDefault();
+    const cochees = [...d.querySelectorAll("input:checked")].map(c => c.value);
+    const ordre = [...actuelles.filter(c => cochees.includes(c)), ...cochees.filter(c => !actuelles.includes(c))];
+    try { await api("PUT", "mission", { raci_roles: ordre }); d.close(); await recharger(); }
+    catch (err) { dire(err.message, true); }
+  } },
+    el("h3", {}, "Colonnes du RACI"),
+    el("p", { class: "aide", style: "margin:0" }, "Choisissez des métiers, des personnes, ou les deux. Une colonne métier regroupe toutes les personnes qui l'exercent ; une colonne personne désigne quelqu'un nommément."),
+    groupe("Métiers", ref.metiers.map(m => el("label", { class: "case", style: "font-size:14px" }, cases("metier:" + m.nom), m.nom,
+      el("span", { style: "color:var(--doux)" }, ` · ${ref.acteurs.filter(a => a.metier === m.nom).length}`)))),
+    groupe("Personnes de l'organisation", ref.acteurs.map(a => el("label", { class: "case", style: "font-size:14px" }, cases("acteur:" + a.id), a.nom,
+      el("span", { style: "color:var(--doux)" }, " · " + (a.metier || a.role || ""))))),
+    el("div", { class: "barre" }, el("span", { class: "pousse" }),
+      el("button", { type: "button", onclick: () => d.close() }, "Annuler"), el("button", { class: "principal" }, "Enregistrer"))));
+  d.showModal();
+}
 VUES.raci = ["RACI", CADRE, async v => {
   const [lignes, m] = await Promise.all([api("GET", "raci"), api("GET", "mission")]);
-  const roles = m.raci_roles || [];
+  const colonnes_ = (m.raci_roles || []).map(cleRaci);
   v.append(titreVue("RACI",
-    "Qui réalise, qui approuve, qui est consulté, qui est informé. Cliquez sur une case pour changer sa valeur. Règle : un seul A par activité, et au moins un R.",
-    el("button", { onclick: async () => {
-      const saisie = prompt("Rôles du RACI, séparés par des virgules :", roles.join(", "));
-      if (saisie == null) return;
-      try { await api("PUT", "mission", { raci_roles: saisie.split(",").map(r => r.trim()).filter(Boolean) }); await recharger(); }
-      catch (e) { dire(e.message, true); }
-    } }, "Modifier les rôles"), boutonAjout("raci", "Ajouter une activité")));
-  if (!roles.length || !lignes.length) { v.append(el("div", { class: "vide" }, "Définissez les rôles puis ajoutez des activités, ou chargez la démo.")); return; }
+    "Qui réalise, qui approuve, qui est consulté, qui est informé. Les colonnes viennent du catalogue de métiers et des personnes de l'organisation. Cliquez sur une case pour changer sa valeur. Règle : un seul A par activité, et au moins un R.",
+    el("button", { onclick: () => choisirColonnesRaci(colonnes_) }, "Choisir les colonnes"), boutonAjout("raci", "Ajouter une activité")));
+  if (!colonnes_.length || !lignes.length) { v.append(el("div", { class: "vide" }, "Choisissez les colonnes puis ajoutez des activités, ou chargez la démo.")); return; }
   const CYCLE = ["", "R", "A", "C", "I"];
   const domaines = [...new Set(lignes.map(l => l.domaine || "Autres"))];
-  const valeurs = l => { try { return JSON.parse(l.valeurs || "{}") || {}; } catch (e) { return {}; } };
+  const valeurs = l => {
+    let brut = {};
+    try { brut = JSON.parse(l.valeurs || "{}") || {}; } catch (e) { /* valeur illisible : ligne vide */ }
+    return Object.fromEntries(Object.entries(brut).map(([k, x]) => [cleRaci(k), x]));
+  };
   v.append(el("div", { class: "barre raci", style: "font-size:13.5px" },
     [["R", "Réalise"], ["A", "Approuve"], ["C", "Est consulté"], ["I", "Est informé"]].map(([k, t]) =>
-      el("span", {}, el("span", { class: "pastille " + k, style: "border-radius:6px" }, k), " " + t))),
+      el("span", {}, el("span", { class: "pastille " + k, style: "border-radius:6px" }, k), " " + t)),
+    el("span", { style: "color:var(--doux)" }, "· en-tête souligné : personne nommée")),
     el("div", { class: "cadre-table raci" }, el("table", {},
-      el("thead", {}, el("tr", {}, el("th", {}, "Activité"), roles.map(r => el("th", { class: "c" }, r)), el("th", {}, "Contrôle"))),
+      el("thead", {}, el("tr", {}, el("th", {}, "Activité"), colonnes_.map(cle => {
+        const c = colonneRaci(cle);
+        return el("th", { class: "c", title: c.precision }, el("span", { style: c.personne ? "text-decoration:underline" : "" }, c.titre),
+          c.precision && el("div", { style: "text-transform:none;letter-spacing:0;font-weight:400;font-size:11px" }, c.precision));
+      }), el("th", {}, "Contrôle"))),
       el("tbody", {}, domaines.map(d => [
-        el("tr", { class: "domaine" }, el("td", { colspan: roles.length + 2 }, d)),
+        el("tr", { class: "domaine" }, el("td", { colspan: colonnes_.length + 2 }, d)),
         lignes.filter(l => (l.domaine || "Autres") === d).map(l => {
-          const val = valeurs(l), liste = Object.values(val);
+          const val = valeurs(l), liste = colonnes_.map(c => val[c]).filter(Boolean);
           const nbA = liste.filter(x => x === "A").length, nbR = liste.filter(x => x === "R").length;
           const souci = nbA !== 1 ? (nbA ? nbA + " approbateurs" : "Aucun approbateur") : !nbR ? "Aucun réalisateur" : null;
           return el("tr", {},
             el("td", { style: "min-width:200px" }, el("button", { class: "lien", style: "color:var(--texte);text-decoration:none;text-align:left",
               title: "Modifier l'activité", onclick: () => formulaire("raci", l, recharger) }, l.activite)),
-            roles.map(r => el("td", { class: "c" }, el("button", { class: val[r] || "", "aria-label": `${l.activite}, ${r} : ${val[r] || "aucun"}`,
+            colonnes_.map(cle => el("td", { class: "c" }, el("button", { class: val[cle] || "",
+              "aria-label": `${l.activite}, ${colonneRaci(cle).titre} : ${val[cle] || "aucun"}`,
               onclick: async () => {
-                const suivant = CYCLE[(CYCLE.indexOf(val[r] || "") + 1) % CYCLE.length];
-                const nv = { ...val }; if (suivant) nv[r] = suivant; else delete nv[r];
+                const suivant = CYCLE[(CYCLE.indexOf(val[cle] || "") + 1) % CYCLE.length];
+                const nv = { ...val }; if (suivant) nv[cle] = suivant; else delete nv[cle];
                 try { await api("PUT", `raci/${l.id}`, { valeurs: JSON.stringify(nv) }); await recharger(); }
                 catch (e) { dire(e.message, true); }
-              } }, val[r] || "·"))),
+              } }, val[cle] || "·"))),
             el("td", {}, souci ? pastille("orange", souci) : pastille("vert", "OK")));
         })])))));
 }];
