@@ -279,6 +279,37 @@ def a_traiter(aujourdhui=None):
             items.append(_item("surveiller", "attente", "Attente à revoir avec le client : " + titre,
                                f"Dernière revue : {calculs.fr(a.get('revue_le'))}", "attente", a["id"], actions=[revue]))
 
+    for h in db.lister("hypothese"):
+        if h.get("statut") != "à vérifier":
+            continue
+        ech = _d(h.get("echeance"))
+        actions_h = [{"libelle": "Confirmée", "table": "hypothese", "id": h["id"], "champs": {"statut": "confirmée"}},
+                     {"libelle": "Invalidée", "table": "hypothese", "id": h["id"], "champs": {"statut": "invalidée"}}]
+        detail = " · ".join(x for x in (h.get("categorie"), h.get("porteur") or "sans porteur",
+                                        f"à vérifier avant le {calculs.fr(ech)}" if ech else "sans échéance") if x)
+        if ech and ech < auj:
+            items.append(_item("maintenant", "hypothese", f"Hypothèse non vérifiée à temps : {h['libelle']}", detail,
+                               "hypothese", h["id"], actions=actions_h))
+        elif ech and ech <= j7:
+            items.append(_item("semaine", "hypothese", f"Hypothèse à vérifier : {h['libelle']}", detail,
+                               "hypothese", h["id"], actions=actions_h))
+        elif not ech:
+            items.append(_item("surveiller", "hypothese", f"Hypothèse à vérifier, sans échéance : {h['libelle']}", detail,
+                               "hypothese", h["id"], actions=actions_h))
+
+    lots = {l["nom"]: l for l in db.lister("lot")}
+    for e in db.lister("lot_element", "axe = 'prerequis'"):
+        lot = lots.get(e.get("lot")) or {}
+        if e.get("statut") == "bloquant":
+            items.append(_item("maintenant", "prerequis", f"Prérequis bloquant : {e['libelle']}",
+                               f"Lot {e.get('lot') or '—'}" + (f" · livraison le {calculs.fr(lot['date'])}" if lot.get("date") else ""),
+                               "lot_element", e["id"],
+                               actions=[{"libelle": "Obtenu", "table": "lot_element", "id": e["id"], "champs": {"statut": "obtenu"}}]))
+        elif e.get("statut") == "en attente" and _d(lot.get("date")) and _d(lot["date"]) <= auj + dt.timedelta(days=30):
+            items.append(_item("semaine", "prerequis", f"Prérequis toujours en attente : {e['libelle']}",
+                               f"Lot {e.get('lot')} livré le {calculs.fr(lot['date'])}", "lot_element", e["id"],
+                               actions=[{"libelle": "Obtenu", "table": "lot_element", "id": e["id"], "champs": {"statut": "obtenu"}}]))
+
     en_attente = db.lister("proposition", "statut = 'en attente'")
     if en_attente:
         items.append(_item("semaine", "compte_rendu", f"{len(en_attente)} proposition(s) extraite(s) des comptes rendus à valider",
@@ -325,7 +356,8 @@ CEREMONIES = {  # mot du nom -> type de rituel agile
     "retrospective": "retrospective", "rétro": "retrospective", "mêlée": "melee", "daily": "melee",
 }
 # Minutes par élément abordé, et durée fixe des points sans liste.
-MINUTES_PAR_ELEMENT = {"decisions": 5, "risques": 3, "attentes": 3, "actions": 2, "jalons": 1}
+MINUTES_PAR_ELEMENT = {"decisions": 5, "risques": 3, "attentes": 3, "actions": 2, "jalons": 1, "hypotheses": 2,
+                       "prerequis": 2}
 MINUTES_FIXES = {"trajectoire": 10, "budget": 5, "sprint": 10, "capacite": 10}
 # Le temps restant de la séance, selon son type.
 TEMPS_LIBRE = {"planification": "Engagement du sprint : sélection et découpage des stories",
@@ -392,6 +424,13 @@ def preparer_seance(ident, aujourdhui=None):
     sprints = db.lister("sprint")
     dernier = sprints[-1] if sprints else None
     k = calculs.kpi(sprints)
+    hypotheses = [h for h in db.lister("hypothese") if h.get("statut") == "à vérifier"
+                  and (not _d(h.get("echeance")) or _d(h["echeance"]) <= auj + dt.timedelta(days=30))]
+    fmt_hyp = lambda h: (f"{h['libelle']} — {h.get('categorie') or 'hypothèse'}, "
+                         + (f"à confirmer par {h['porteur']}" if h.get("porteur") else "porteur à désigner")
+                         + (f" avant le {calculs.fr(h['echeance'])}" if h.get("echeance") else ""))
+    prerequis = [e for e in db.lister("lot_element", "axe = 'prerequis'") if e.get("statut") in ("bloquant", "en attente")]
+    fmt_prerequis = lambda e: f"{e['libelle']} — lot {e.get('lot') or '—'}, {e.get('statut')}"
 
     points = []  # (clé, titre, contenu)
     if genre == "comite":
@@ -402,6 +441,7 @@ def preparer_seance(ident, aujourdhui=None):
         points.append(("risques", "Risques critiques ou en hausse", [fmt_risque(r) for r in risques
                        if (r.get("criticite") or 0) >= 6 or r.get("evolution_session") in ("hausse", "nouveau")]))
         points.append(("attentes", "Attentes du client à traiter", [fmt_attente(a) for a in attentes if a_traiter_(a)]))
+        points.append(("hypotheses", "Hypothèses à confirmer", [fmt_hyp(h) for h in hypotheses]))
         points.append(("decisions", "Décisions à obtenir", [fmt_decision(d) for d in decisions_ if rattache(d) or not d.get("instance")]))
         b = donnees.budget(auj)
         if b["reference"]:
@@ -412,6 +452,8 @@ def preparer_seance(ident, aujourdhui=None):
         points.append(("risques", "Risques et adhérences", [fmt_risque(r) for r in risques
                        if concerne(r.get("porteur")) or r.get("nature") == "adherence" or r.get("evolution_session") in ("hausse", "nouveau")]))
         points.append(("jalons", "Jalons des six prochaines semaines", [fmt_jalon(j) for j in jalons_proches]))
+        points.append(("prerequis", "Prérequis en attente ou bloquants", [fmt_prerequis(e) for e in prerequis]))
+        points.append(("hypotheses", "Hypothèses à vérifier", [fmt_hyp(h) for h in hypotheses if concerne(h.get("porteur"))]))
         points.append(("attentes", "Attentes des participants", [fmt_attente(a) for a in attentes if concerne(a.get("partie_prenante")) and a_traiter_(a)]))
         points.append(("decisions", "Décisions à préparer", [fmt_decision(d) for d in decisions_ if rattache(d)]))
     elif genre == "planification":
@@ -446,10 +488,10 @@ def preparer_seance(ident, aujourdhui=None):
     if sum(voulu.values()) > dispo and voulu:
         f = dispo / sum(voulu.values())
         voulu = {c: max(pas, int(v * f / pas) * pas) for c, v in voulu.items()}
-        while sum(voulu.values()) > dispo and any(v > pas for v in voulu.values()):
-            voulu[max(voulu, key=voulu.get)] -= pas
     else:
         voulu = {c: -(-v // pas) * pas for c, v in voulu.items()}  # arrondi au pas supérieur
+    while sum(voulu.values()) > dispo and any(v > pas for v in voulu.values()):
+        voulu[max(voulu, key=voulu.get)] -= pas  # on rabote le point le plus long
     libre = total - 2 * bornes - sum(voulu.values())
     objectifs = [o for o in (inst.get("objectifs") or "").split("\n") if o.strip()]
     ordre_du_jour = [{"cle": "ouverture", "titre": "Objectifs de la séance", "minutes": bornes, "contenu": objectifs}] if bornes else []

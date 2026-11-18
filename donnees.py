@@ -12,7 +12,7 @@ import meteo
 # Éléments que l'interface et l'assistant (MCP) peuvent créer, modifier et supprimer.
 EDITABLES = {"jalon", "livrable", "sprint", "risque", "decision", "compte_rendu",
              "lot", "lot_element", "story", "activite", "acteur", "instance", "raci", "metier",
-             "estimation", "profil", "consommation", "depense", "facture", "attente"}
+             "estimation", "profil", "consommation", "depense", "facture", "attente", "hypothese"}
 CHAMPS_JSON_MISSION = ("seuils", "raci_roles", "chiffrage")
 
 
@@ -20,11 +20,16 @@ def creer_element(table, corps, aujourdhui=None):
     """Création avec les règles de datage : un risque ou une décision porte sa date de création."""
     auj = (aujourdhui or dt.date.today()).isoformat()
     corps = dict(corps or {})
-    if table in ("risque", "decision"):
+    if table in ("risque", "decision", "hypothese"):
         corps["cree_le"] = auj
     if table == "risque" and not corps.get("maj_le"):
         corps["maj_le"] = auj
-    return db.creer(table, corps)
+    if table == "hypothese":
+        corps.setdefault("statut", "à vérifier")
+    cree = db.creer(table, corps)
+    if table == "hypothese" and cree.get("statut") == "invalidée":
+        cree = _hypothese_invalidee(cree, aujourdhui)
+    return cree
 
 
 def modifier_element(table, ident, corps, aujourdhui=None):
@@ -36,7 +41,26 @@ def modifier_element(table, ident, corps, aujourdhui=None):
     # Toute modification d'un risque le date du jour, sauf date saisie à la main.
     if table == "risque" and corps.get("maj_le") in (None, "", existant.get("maj_le")):
         corps["maj_le"] = (aujourdhui or dt.date.today()).isoformat()
-    return db.modifier(table, ident, corps)
+    if table == "hypothese" and corps.get("statut") in ("confirmée", "invalidée") and corps["statut"] != existant.get("statut"):
+        corps.setdefault("verifiee_le", (aujourdhui or dt.date.today()).isoformat())
+    modifie = db.modifier(table, ident, corps)
+    if table == "hypothese" and modifie.get("statut") == "invalidée" and existant.get("statut") != "invalidée":
+        modifie = _hypothese_invalidee(modifie, aujourdhui)
+    return modifie
+
+
+def _hypothese_invalidee(h, aujourdhui=None):
+    """Une hypothèse invalidée devient un risque ouvert (s'il n'existe pas déjà), relié à elle."""
+    if h.get("risque_id") and db.lire("risque", h["risque_id"]):
+        return h
+    r = creer_element("risque", {
+        "nature": "risque", "titre": f"Hypothèse invalidée : {h['libelle']}",
+        "description": (h.get("impact") or "Conséquence à qualifier.")
+                       + (f"\nHypothèse de {h['categorie']}" if h.get("categorie") else "")
+                       + (f", source : {h['source']}" if h.get("source") else "") + ".",
+        "probabilite": 3, "etat": "ouvert", "evolution": "hausse", "lot": h.get("lot") or "",
+        "porteur": h.get("porteur") or ""}, aujourdhui)
+    return db.modifier("hypothese", h["id"], {"risque_id": r["id"]})
 
 
 def appliquer_bloc(ident, niveau, mode="detaille", lot="", quantite=1, libelle=None):
@@ -46,6 +70,14 @@ def appliquer_bloc(ident, niveau, mode="detaille", lot="", quantite=1, libelle=N
     crees = []
     for l in catalogue.lignes(ident, niveau, mode, lot, quantite, db.lister("profil"), libelle, p["marges"]):
         crees.append(db.creer("estimation", {**l, "rang": rang}))
+    if niveau == "long" and crees:
+        # Chiffrer « sans information », c'est faire une hypothèse : elle est suivie jusqu'à la collecte.
+        bas, prob, haut = (sum(c[k] or 0 for c in crees) for k in ("jours_bas", "jours_probable", "jours_haut"))
+        creer_element("hypothese", {
+            "libelle": f"{crees[0]['libelle']} : charge à confirmer après la collecte d'informations",
+            "categorie": "chiffrage", "statut": "à vérifier", "source": "catalogue de chiffrage", "lot": lot or "",
+            "impact": f"Chiffré {prob:g} j sans information (fourchette {bas:g} à {haut:g} j) : "
+                      "un dépassement au-delà de la fourchette haute pèse sur le budget."})
     return crees
 
 

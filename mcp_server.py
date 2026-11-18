@@ -60,6 +60,9 @@ DESCRIPTIONS = {
     "consommation": "Temps consommé : mois (AAAA-MM), profil (nom), jours.",
     "depense": "Dépense hors temps passé : montant, catégorie, statut (prévue | engagée | payée).",
     "facture": "Échéance de facturation : montant, date prévue, statut (à facturer | facturée | payée), jalon déclencheur.",
+    "hypothese": "Hypothèse suivie (planning, chiffrage, périmètre, organisation, technique, données, budget) : "
+                 "statut à vérifier | confirmée | invalidée, porteur qui doit la confirmer, échéance de vérification, "
+                 "impact si elle est invalidée. Passer une hypothèse à « invalidée » crée le risque correspondant (risque_id).",
     "attente": "Attente du client : partie prenante, catégorie (délai | périmètre | qualité | coût | relation | communication), "
                "priorité (1 forte à 3), satisfaction (1 à 5), position (alignée | à recadrer | hors périmètre), "
                "réponse, prochaine action, échéance, date de dernière revue.",

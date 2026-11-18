@@ -116,6 +116,36 @@ def _charger(aujourdhui):
     })
     demo_cadre.charger(j)
     finances_demo(auj, j)
+    hypotheses_demo(j)
+
+
+def hypotheses_demo(j):
+    db.modifier("mission", 1, {"hypotheses_reprises": 1})
+    etats = {"API contrats": "bloquant", "Environnement de recette": "obtenu",
+             "Validation conformité des écrans": "en attente", "API de souscription": "en attente",
+             "Solution de signature électronique": "en attente"}
+    for e in db.lister("lot_element", "axe = 'prerequis'"):
+        if e["libelle"] in etats:
+            db.modifier("lot_element", e["id"], {"statut": etats[e["libelle"]]})
+    for lib, cat, st, porteur, ech, impact, lot, source in [
+        ("Équipe de 4 développeurs complète jusqu'à la V1", "organisation", "invalidée", "Pilote de mission", j(-10),
+         "Un départ non remplacé fait perdre environ 25 % de la capacité.", "V1", "proposition commerciale"),
+        ("API contrats livrée par l'équipe SI Contrats avant la recette", "planning", "à vérifier", "Responsable SI Contrats",
+         j(-2), "Sans l'API, pas de recette de bout en bout : la mise en service glisse.", "V1", "comité de lancement"),
+        ("Le SSO du client est réutilisable pour l'espace courtier", "technique", "confirmée", "Tech lead", j(-30),
+         "Sinon, prévoir un chantier d'authentification de 15 à 25 jours.", "V1", "atelier d'architecture"),
+        ("Six types de demandes au maximum dans le dépôt en ligne", "périmètre", "à vérifier", "Product owner", j(5),
+         "Au-delà, le chiffrage du dépôt et suivi des demandes est à reprendre.", "V1", "ateliers de cadrage"),
+        ("Les données de recette peuvent être anonymisées par l'IT", "données", "à vérifier", "", "",
+         "Sinon, la recette métier ne peut pas démarrer.", "V1", "synchro hebdo")]:
+        db.creer("hypothese", {"libelle": lib, "categorie": cat, "statut": st, "porteur": porteur, "echeance": ech,
+                               "impact": impact, "lot": lot, "source": source, "cree_le": j(-60),
+                               "verifiee_le": ech if st != "à vérifier" else None})
+    # L'hypothèse d'équipe complète, invalidée par un départ, a fait naître le risque de vélocité.
+    velocite = next((r for r in db.lister("risque") if r["titre"].startswith("Vélocité")), None)
+    invalidee = next(h for h in db.lister("hypothese") if h["statut"] == "invalidée")
+    if velocite:
+        db.modifier("hypothese", invalidee["id"], {"risque_id": velocite["id"]})
 
 
 def finances_demo(auj, j):

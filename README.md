@@ -85,26 +85,37 @@ du modèle validé (décision D3 de la note de cadrage).
 
 ## Vues
 
-**Aujourd'hui** : la page « À traiter », ouverte par défaut. Elle rassemble ce que la mission
-attend du pilote, classé en *maintenant* (actions et décisions en retard, risques critiques sans
-porteur ou plan, jalons dépassés, factures à émettre, attentes à recadrer, sprint à saisir),
-*cette semaine* (échéances, réunions à préparer, météo à générer, propositions à valider) et
-*à surveiller* (décisions qui traînent, attentes à revoir). Les boutons agissent directement
-(« Marquer faite », « Marquer facturée », « Revue faite aujourd'hui », « Préparer »…).
+Le menu est rangé par moment du pilotage :
 
-**Cadre de la mission** : feuille de route (lots, grande temporalité, prérequis), lotissement
-détaillé (pour qui, comment, quoi, grâce à quoi), story map, macro-planning au mois,
-organisation et adhérences, gouvernance, rappel du sprint et des KPI à collecter, RACI.
+- **Aujourd'hui** : À traiter (page d'accueil), Synthèse.
+- **Piloter** : suivi des risques, attentes du client, décisions et actions (avec leur
+  ancienneté), macro-planning (reports et hypothèses du planning), indicateurs (avec, en bas de
+  page, le rappel du fonctionnement d'un sprint et des KPI à collecter), budget (analyse).
+- **Préparer et rendre compte** : gouvernance (préparation des séances), météo hebdomadaire.
+- **Cadrer** : fiche mission et hypothèses, feuille de route (vue d'ensemble ou détail pour
+  qui, comment, quoi ; état de chaque prérequis), story map, organisation, RACI, chiffrage.
+- **Saisir** : sprints, saisie du budget (temps consommés, dépenses), comptes rendus, historique.
 
-**Pilotage** : synthèse et alertes, indicateurs, suivi des risques, attentes du client,
-décisions et actions, météo hebdomadaire.
-
-**Finances** : chiffrage, budget.
-
-**Saisie** : sprints, comptes rendus, historique des modifications.
+**À traiter** rassemble ce que la mission attend du pilote, classé en *maintenant* (actions et
+décisions en retard, risques critiques sans porteur ou plan, jalons dépassés, prérequis
+bloquants, hypothèses non vérifiées à temps, factures à émettre, attentes à recadrer, sprint à
+saisir), *cette semaine* (échéances, réunions à préparer, météo à générer, propositions à valider)
+et *à surveiller* (décisions qui traînent, hypothèses sans échéance, attentes à revoir). Les
+boutons agissent directement (« Marquer faite », « Obtenu », « Confirmée », « Préparer »…).
 
 L'évolution d'un risque est calculée par rapport à la dernière session, c'est-à-dire la
 dernière météo générée avant aujourd'hui : chaque météo garde une photo du registre.
+
+### Hypothèses suivies
+
+Chaque hypothèse (planning, chiffrage, périmètre, organisation, technique, données, budget) a un
+statut — à vérifier, confirmée, invalidée —, la personne qui doit la confirmer, une échéance de
+vérification et sa conséquence si elle tombe. Les passer à « invalidée » crée le risque
+correspondant, relié à l'hypothèse. Elles apparaissent dans la fiche mission, le macro-planning
+(hypothèses du planning), le chiffrage (hypothèses du chiffrage, alerte si l'une est invalidée),
+la préparation des comités et des points de suivi, et la page À traiter. Un bloc du catalogue
+retenu au niveau « aucune information » crée une hypothèse de chiffrage à vérifier. L'ancien
+champ texte des hypothèses est repris automatiquement, une ligne par hypothèse.
 
 ### Métiers, organisation et RACI
 
@@ -170,7 +181,9 @@ par nom, puis par métier) ou une ligne en mode macro ; la fourchette suit le ni
 personnalisent ou se créent depuis l'interface ; ils sont communs à toutes les missions
 (`missions/catalogue-chiffrage.json`). Les valeurs par défaut sont un point de départ à calibrer.
 
-Les majorations (pilotage, qualité, contingence) s'appliquent aux deux. Une comparaison par lot
+Les majorations (pilotage, qualité, contingence) s'appliquent aux deux. Un indice
+d'incertitude dit si le chiffrage est défendable : étendue de la fourchette, part de la charge
+chiffrée sans information, part du risque haut couverte par la contingence, lignes sans profil. Une comparaison par lot
 montre l'écart entre les deux modes. Le mode retenu sert de budget de référence tant que le
 budget vendu n'est pas saisi ; « Reporter en budget vendu » le fixe.
 

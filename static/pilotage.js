@@ -89,7 +89,8 @@ VUES.risques = ["Suivi des risques", PILOTAGE, async v => {
       el("td", {}, r.criticite ? pastille(r.criticite >= 6 ? "rouge" : r.criticite >= 3 ? "orange" : "vert", r.criticite + " / 9") : "—"),
       el("td", {}, r.lot ? pastilleLot(r.lot.trim()) : "—"),
       el("td", {}, r.porteur || pastille("orange", "Sans porteur")),
-      el("td", { style: "white-space:nowrap" }, dateFr(r.echeance)));
+      el("td", { style: "white-space:nowrap" }, dateFr(r.echeance),
+        r.etat !== "clos" && r.echeance && r.echeance < new Date().toISOString().slice(0, 10) ? [" ", pastille("rouge", "Dépassée")] : null));
   };
   const table = lignes => el("div", { class: "cadre-table" }, el("table", {},
     el("thead", {}, el("tr", {}, ["ID", "Risque", "État", "Évolution depuis la dernière session", "Criticité", "Lot impacté", "Porteur", "Échéance"].map(c => el("th", {}, c)))),
@@ -119,8 +120,9 @@ VUES.decisions = ["Décisions et actions", PILOTAGE, async v => {
     ["Titre", l => l.titre, "long"], ["Statut", l => l.statut || "—"],
     ["Décideur ou porteur", l => l.porteur || pastille("orange", "Non désigné")],
     ["Échéance", l => [dateFr(l.echeance), ouvert(l) && l.echeance && l.echeance < auj ? [" ", pastille("rouge", "En retard")] : null]],
-    ["Instance", l => l.instance || "—"]];
-  v.append(titreVue("Décisions et actions", "Le journal des décisions prises et à prendre, et les actions qui en découlent."),
+    ["Instance", l => l.instance || "—"],
+    ["En attente depuis", l => (ouvert(l) && l.cree_le ? Math.round((new Date(auj) - jour(l.cree_le)) / 864e5) + " j" : "—"), "num"]];
+  v.append(titreVue("Décisions et actions", "Quelles décisions attendent, chez qui et depuis quand ? Le journal des décisions prises et à prendre, et les actions qui en découlent."),
     section("Décisions", "decision", lignes.filter(l => l.nature === "decision"), cols, recharger),
     section("Actions", "decision", lignes.filter(l => l.nature !== "decision"), cols, recharger));
 }];

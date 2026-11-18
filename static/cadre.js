@@ -3,6 +3,14 @@
 // organisation, gouvernance, rappel du sprint, RACI, fiche mission.
 const CADRE = "Cadre de la mission";
 
+const STATUTS_HYP = { "à vérifier": "orange", "confirmée": "vert", "invalidée": "rouge" };
+const pastilleHypothese = st => pastille(STATUTS_HYP[st] || "neutre", st || "à vérifier");
+const colonnesHypotheses = [
+  ["Hypothèse", h => [el("b", {}, h.libelle), h.impact && el("div", { style: "color:var(--doux);font-size:13px" }, "Si invalidée : " + h.impact)], "long"],
+  ["Catégorie", h => h.categorie || "—"], ["Statut", h => [pastilleHypothese(h.statut), h.risque_id ? el("div", { style: "font-size:12.5px;color:var(--doux)" }, "→ risque créé") : null]],
+  ["Qui confirme", h => h.porteur || (h.statut === "à vérifier" ? pastille("orange", "À désigner") : "—")],
+  ["Échéance", h => [dateFr(h.echeance), h.statut === "à vérifier" && h.echeance && h.echeance < new Date().toISOString().slice(0, 10) ? [" ", pastille("rouge", "Dépassée")] : null]],
+  ["Lot", h => (h.lot ? pastilleLot(h.lot) : "—")]];
 const puce = (type, objet, texte, detail, classe = "") => el("button", {
   class: "puce " + classe, title: "Modifier", onclick: () => formulaire(type, objet, recharger) },
   texte, detail && el("small", {}, detail));
@@ -10,7 +18,7 @@ const boutonAjout = (type, texte, defauts) =>
   el("button", { onclick: () => formulaire(type, null, recharger, defauts) }, texte);
 
 // ---------- 1. Feuille de route : lots, grande temporalité, prérequis ----------
-VUES.route = ["Feuille de route", CADRE, async v => {
+async function routeEnsemble(v) {
   const [lots, elements] = await Promise.all([api("GET", "lot"), api("GET", "lot_element")]);
   v.append(titreVue("Feuille de route",
     "Ce que chaque lot livre, quand, et ce dont il dépend. Les prérequis sont les adhérences à piloter.",
@@ -19,7 +27,7 @@ VUES.route = ["Feuille de route", CADRE, async v => {
   const bloc = (lot, axe, titre, classe) => {
     const liste = elements.filter(e => e.lot === lot.nom && e.axe === axe);
     return el("div", { class: "bloc " + classe }, el("h4", {}, titre),
-      liste.length ? liste.map(e => puce("lot_element", e, e.libelle, e.detail))
+      liste.length ? liste.map(e => puce("lot_element", e, axe === "prerequis" ? [e.libelle, " ", statutPrerequis(e.statut)] : e.libelle, e.detail))
         : el("div", { style: "color:var(--doux);font-size:14px;margin-top:6px" }, "Aucun"),
       el("button", { class: "lien", style: "margin-top:8px;font-size:13px",
         onclick: () => formulaire("lot_element", null, recharger, { lot: lot.nom, axe }) }, "Ajouter"));
@@ -35,10 +43,10 @@ VUES.route = ["Feuille de route", CADRE, async v => {
         [lot.statut, lot.date && "livraison le " + dateFr(lot.date)].filter(Boolean).join(" · ")),
       bloc(lot, "contenu", "Livré dans ce lot", ""),
       bloc(lot, "prerequis", "Prérequis", "prerequis"))))));
-}];
+}
 
 // ---------- 2. Lotissement détaillé : pour qui, comment, quoi, grâce à quoi ----------
-VUES.lotissement = ["Lotissement détaillé", CADRE, async v => {
+async function routeDetail(v) {
   const [lots, elements] = await Promise.all([api("GET", "lot"), api("GET", "lot_element")]);
   v.append(titreVue("Lotissement détaillé",
     "La même feuille de route, lue en phrase : pour qui, par quel canal, pour quels produits, grâce à quelles fonctionnalités — et sous quels prérequis.",
@@ -53,10 +61,25 @@ VUES.lotissement = ["Lotissement détaillé", CADRE, async v => {
     el("tbody", {}, lignes.map(([axe, question, sous]) => el("tr", {},
       el("td", { style: "min-width:150px" }, el("b", {}, question), el("div", { style: "color:var(--doux);font-size:13px" }, sous)),
       lots.map(l => el("td", { style: "min-width:180px" },
-        elements.filter(e => e.lot === l.nom && e.axe === axe).map(e => puce("lot_element", e, e.libelle, e.detail)),
+        elements.filter(e => e.lot === l.nom && e.axe === axe).map(e => puce("lot_element", e, axe === "prerequis" ? [e.libelle, " ", statutPrerequis(e.statut)] : e.libelle, e.detail)),
         el("button", { class: "lien", style: "font-size:13px;margin-top:6px",
           onclick: () => formulaire("lot_element", null, recharger, { lot: l.nom, axe }) }, "Ajouter")))))))));
+}
+
+// Feuille de route : une page, deux lectures (vue d'ensemble, détail pour qui / comment / quoi).
+VUES.route = ["Feuille de route", CADRE, async v => {
+  const detail = etat.modeRoute === "detail";
+  etat.exportVue = detail ? "lotissement" : "route";
+  await (detail ? routeDetail : routeEnsemble)(v);
+  const bascule = el("div", { class: "barre", role: "tablist", style: "margin-top:0" },
+    [["ensemble", "Vue d'ensemble : livré et prérequis"], ["detail", "Détail : pour qui, comment, quoi"]].map(([cle, lib]) =>
+      el("button", { role: "tab", "aria-selected": String((cle === "detail") === detail), class: (cle === "detail") === detail ? "principal" : "",
+        onclick: () => { etat.modeRoute = cle; recharger(); } }, lib)));
+  v.insertBefore(bascule, v.children[2] || null);
 }];
+VUES.lotissement = ["Lotissement détaillé", CADRE, v => { etat.modeRoute = "detail"; return VUES.route[2](v); }];
+const STATUTS_PREREQUIS = { obtenu: "vert", "en attente": "orange", bloquant: "rouge" };
+const statutPrerequis = st => (st ? pastille(STATUTS_PREREQUIS[st] || "neutre", st) : pastille("neutre", "état à préciser"));
 
 // ---------- 3. Story map complète ----------
 VUES.storymap = ["Story map", CADRE, async v => {
@@ -90,9 +113,10 @@ VUES.storymap = ["Story map", CADRE, async v => {
 const glissementJours = j => { const a = jour(j.date), b = jour(j.date_initiale); return a && b ? Math.round((a - b) / 864e5) : 0; };
 const dureeLisible = n => (Math.abs(n) < 14 ? `${n} j` : `${Math.round(n / 7)} semaines`);
 VUES.planning = ["Macro-planning", CADRE, async v => {
-  const [activites, jalons, m] = await Promise.all([api("GET", "activite"), api("GET", "jalon"), api("GET", "mission")]);
+  const [activites, jalons, hyps] = await Promise.all([api("GET", "activite"), api("GET", "jalon"), api("GET", "hypothese")]);
+  const hypPlanning = hyps.filter(h => h.categorie === "planning" || h.categorie === "organisation");
   v.append(titreVue("Macro-planning",
-    "Les phases et les jalons à la maille du mois. Hypothèses du planning : " + (m.hypotheses || "non renseignées."),
+    "Les phases et les jalons à la maille du mois, avec les reports par rapport à l'engagement initial. Le planning repose sur les hypothèses ci-dessous.",
     boutonAjout("activite", "Ajouter une activité"), boutonAjout("jalon", "Ajouter un jalon")));
   const dates = [...activites.flatMap(a => [jour(a.debut), jour(a.fin)]), ...jalons.map(j => jour(j.date))].filter(Boolean);
   if (!dates.length) { v.append(el("div", { class: "vide" }, "Aucune activité ni jalon daté.")); return; }
@@ -131,6 +155,8 @@ VUES.planning = ["Macro-planning", CADRE, async v => {
         title: `${a.libelle} — du ${dateFr(a.debut)} au ${dateFr(a.fin)}`, onclick: () => formulaire("activite", a, recharger) }, courte ? "" : a.libelle),
         courte && el("span", { class: "hors", style: aGauche ? `right:${100 - pos(d)}%;padding-right:6px` : `left:${pos(f)}%;padding-left:6px` }, a.libelle));
     }))))),
+    hypPlanning.length ? el("div", { class: "carte", style: "margin-top:12px" }, el("b", {}, "Hypothèses du planning"),
+      el("ul", { style: "margin:6px 0 0;padding-left:18px" }, hypPlanning.map(h => el("li", {}, h.libelle, " ", pastilleHypothese(h.statut))))) : null,
     el("div", { class: "barre", style: "color:var(--doux);font-size:13px" },
       el("span", {}, "◆ jalon (vert : atteint)"), el("span", {}, "· ◇ date d'engagement initiale d'un jalon reporté"),
       el("span", {}, "· barre grise : activité terminée"), el("span", {}, "· trait rouge : aujourd'hui")));
@@ -356,13 +382,13 @@ VUES.raci = ["RACI", CADRE, async v => {
 
 // ---------- Fiche mission ----------
 VUES.mission = ["Fiche mission", CADRE, async v => {
-  const [m, livrables] = await Promise.all([api("GET", "mission"), api("GET", "livrable")]);
+  const [m, livrables, hyps] = await Promise.all([api("GET", "mission"), api("GET", "livrable"), api("GET", "hypothese")]);
   const champ = (cle, lib, genre = "text", large = false) => {
     const s = genre === "long" ? el("textarea", { name: cle }) : el("input", { name: cle, type: genre });
     s.value = m[cle] ?? "";
     return el("label", { class: large ? "large" : "" }, lib, s);
   };
-  v.append(titreVue("Fiche mission", "Objectifs et porteurs des trois dimensions du pilotage, hypothèses du planning et date cible de l'atterrissage."),
+  v.append(titreVue("Fiche mission", "Sur quoi la mission s'est engagée : objectifs et porteurs des trois dimensions du pilotage, date cible, et les hypothèses sur lesquelles reposent le planning et le chiffrage."),
     el("form", { class: "carte", onsubmit: async e => {
       e.preventDefault();
       const corps = Object.fromEntries(new FormData(e.target));
@@ -374,9 +400,10 @@ VUES.mission = ["Fiche mission", CADRE, async v => {
       champ("objectif_business", "Objectif business", "long"), champ("porteur_business", "Porteur business"),
       champ("objectif_solution", "Objectif solution", "long"), champ("porteur_solution", "Porteur solution"),
       champ("objectif_projet", "Objectif projet", "long"), champ("porteur_projet", "Porteur projet"),
-      champ("hypotheses", "Hypothèses du planning", "long", true),
       champ("date_cible", "Date cible", "date"), champ("duree_sprint_jours", "Durée d'un sprint (jours)", "number")),
       el("div", { class: "barre" }, el("button", { class: "principal pousse" }, "Enregistrer"))),
+    section("Hypothèses", "hypothese", hyps, colonnesHypotheses, recharger),
+    el("p", { class: "aide", style: "margin-top:6px" }, "Une hypothèse invalidée crée le risque correspondant dans le suivi des risques."),
     section("Livrables de pilotage", "livrable", livrables, [
       ["Chantier", l => l.chantier || "—"], ["Livrable", l => l.libelle],
       ["Avancement", l => (l.avancement == null ? "—" : l.avancement + " %"), "num"],

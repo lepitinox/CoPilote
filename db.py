@@ -31,7 +31,13 @@ TABLES = {
         "seuils": "TEXT", "raci_roles": "TEXT",
         # chiffrage : paramètres JSON (abaque, marges, majorations, mode retenu, TJM moyen)
         "chiffrage": "TEXT", "budget_vendu": "REAL",
+        "hypotheses_reprises": "INTEGER",  # ancien champ texte « hypotheses » repris en lignes
     },
+    # Hypothèses suivies : ce sur quoi reposent le planning, le chiffrage, le périmètre.
+    # statut : à vérifier | confirmée | invalidée ; une hypothèse invalidée fait naître un risque.
+    "hypothese": {"libelle": "TEXT", "categorie": "TEXT", "statut": "TEXT", "source": "TEXT",
+                  "porteur": "TEXT", "echeance": "TEXT", "impact": "TEXT", "lot": "TEXT",
+                  "risque_id": "INTEGER", "verifiee_le": "TEXT", "cree_le": "TEXT"},
     # Chiffrage. mode : macro (peu d'informations : taille et abaque) | detaille (après
     # collecte : charge en trois points par profil).
     "estimation": {"mode": "TEXT", "lot": "TEXT", "libelle": "TEXT", "taille": "TEXT",
@@ -58,7 +64,8 @@ TABLES = {
     "lot": {"nom": "TEXT", "titre": "TEXT", "periode": "TEXT", "date": "TEXT",
             "statut": "TEXT", "rang": "INTEGER", "date_initiale": "TEXT"},
     # axe : contenu | prerequis | pour_qui | comment | quoi | fonctionnalite
-    "lot_element": {"lot": "TEXT", "axe": "TEXT", "libelle": "TEXT", "detail": "TEXT"},
+    # statut (prérequis) : obtenu | en attente | bloquant
+    "lot_element": {"lot": "TEXT", "axe": "TEXT", "libelle": "TEXT", "detail": "TEXT", "statut": "TEXT"},
     "story": {"etape": "TEXT", "rang_etape": "INTEGER", "libelle": "TEXT", "lot": "TEXT",
               "irritant": "INTEGER", "innovation": "INTEGER"},
     "activite": {"piste": "TEXT", "libelle": "TEXT", "debut": "TEXT", "fin": "TEXT"},
@@ -121,6 +128,7 @@ ORDRE = {
     "estimation": "mode, lot, rang, id", "profil": "rang, id", "consommation": "mois, id",
     "depense": "date, id", "facture": "date_prevue, id",
     "attente": "partie_prenante, priorite, id",
+    "hypothese": "CASE statut WHEN 'invalidée' THEN 0 WHEN 'à vérifier' THEN 1 ELSE 2 END, echeance, id",
 }
 
 METIERS_DEFAUT = [
@@ -318,6 +326,14 @@ def initialiser():
                 "INSERT INTO mission (id, nom, duree_sprint_jours, seuils) VALUES (1, ?, 14, ?)",
                 ("Nouvelle mission", "{}"),
             )
+        # Ancien champ texte des hypothèses : une ligne suivie par hypothèse (une seule fois).
+        m = c.execute("SELECT hypotheses, hypotheses_reprises FROM mission WHERE id = 1").fetchone()
+        if m and not m["hypotheses_reprises"]:
+            for texte in re.split(r"[;\n]+", m["hypotheses"] or ""):
+                if texte.strip(" .-•"):
+                    c.execute("INSERT INTO hypothese (libelle, categorie, statut, source) VALUES (?, ?, ?, ?)",
+                              (texte.strip(" .-•"), "planning", "à vérifier", "fiche mission"))
+            c.execute("UPDATE mission SET hypotheses_reprises = 1 WHERE id = 1")
         # Jalons et lots d'avant les dates de référence : la date actuelle devient la référence.
         for t in ("jalon", "lot"):
             c.execute(f"UPDATE {t} SET date_initiale = date WHERE date_initiale IS NULL AND date IS NOT NULL AND date != ''")

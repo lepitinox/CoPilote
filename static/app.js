@@ -115,7 +115,8 @@ const ENTITES = {
     ["statut", "Statut", "choix", ["à venir", "en cours", "livré", "à arbitrer"]]] },
   lot_element: { nom: "élément de lot", champs: [
     ["lot", "Lot", "choix", nomsLots], ["axe", "Rubrique", "choix", Object.entries(AXES)],
-    ["libelle", "Libellé", "texte", null, true], ["detail", "Précision", "texte", null, true]] },
+    ["libelle", "Libellé", "texte", null, true], ["detail", "Précision", "texte", null, true],
+    ["statut", "État (prérequis)", "choix", ["", "obtenu", "en attente", "bloquant"]]] },
   story: { nom: "story", champs: [
     ["etape", "Étape du parcours (colonne)", "texte"], ["rang_etape", "Ordre de l'étape", "nombre"],
     ["libelle", "Story", "texte", null, true], ["lot", "Lot", "choix", nomsLots],
@@ -172,6 +173,14 @@ const ENTITES = {
     ["position", "Position", "choix", ["alignée", "à recadrer", "hors périmètre"]], ["echeance", "Échéance", "date"],
     ["reponse", "Notre réponse, engagement ou message de recadrage", "long", null, true],
     ["prochaine_action", "Prochaine action", "texte", null, true], ["revue_le", "Dernière revue avec le client", "date"]] },
+  hypothese: { nom: "hypothèse", champs: [
+    ["libelle", "Hypothèse", "texte", null, true],
+    ["categorie", "Catégorie", "choix", ["planning", "chiffrage", "périmètre", "organisation", "technique", "données", "budget"]],
+    ["statut", "Statut", "choix", ["à vérifier", "confirmée", "invalidée"]],
+    ["porteur", "Qui doit la confirmer", "choix", () => [["", "—"], ...ref.acteurs.map(a => [a.nom, a.nom])]],
+    ["echeance", "À vérifier avant le", "date"], ["lot", "Lot concerné", "choix", () => [["", "—"], ...nomsLots().map(n => [n, n])]],
+    ["source", "Source (atelier, contrat, comité…)", "texte"],
+    ["impact", "Conséquence si elle est invalidée (reprise dans le risque créé)", "long", null, true]] },
   raci: { nom: "activité du RACI", champs: [
     ["domaine", "Domaine", "texte"], ["rang", "Ordre d'affichage", "nombre"],
     ["activite", "Activité", "texte", null, true]] },
@@ -250,7 +259,7 @@ function section(titre, type, lignes, colonnes, apres) {
 }
 const titreVue = (titre, aide, ...actions) => [
   el("div", { class: "barre", style: "margin-top:0" }, el("h2", { style: "margin:0;font-size:20px" }, titre),
-    el("span", { class: "pousse" }), actions, boutonsExport(etat.vue)),
+    el("span", { class: "pousse" }), actions, boutonsExport(etat.exportVue || etat.vue)),
   el("p", { class: "aide" }, aide)];
 
 // ---------- exports PowerPoint / Excel ----------
@@ -318,13 +327,22 @@ function dialogueModeles(vue) {
 // ---------- navigation ----------
 // VUES[clé] = [libellé du menu, groupe, fonction de rendu]
 const VUES = {};
+// Menu rangé par moment du pilotage : ce que je fais aujourd'hui, je pilote, je prépare et rends
+// compte, je cadre, je saisis.
+const MENU = [
+  ["Aujourd'hui", ["aujourdhui", "synthese"]],
+  ["Piloter", ["risques", "attentes", "decisions", "planning", "kpi", "budget"]],
+  ["Préparer et rendre compte", ["gouvernance", "meteo"]],
+  ["Cadrer", ["mission", "route", "storymap", "organisation", "raci", "chiffrage"]],
+  ["Saisir", ["sprints", "budget_saisie", "cr", "historique"]],
+];
 const GROUPES = ["Aujourd'hui", "Cadre de la mission", "Pilotage", "Finances", "Saisie"];
 const ORDRE = ["aujourdhui", "route", "lotissement", "storymap", "planning", "organisation", "gouvernance", "sprintkpi", "raci",
   "mission", "synthese", "kpi", "risques", "attentes", "decisions", "meteo", "chiffrage", "budget", "sprints", "cr", "historique"];
 const etat = { vue: "aujourdhui", cr: null, meteo: null, edition: false, mission: null, missions: [] };
 
 async function afficher(nom) {
-  etat.vue = nom;
+  etat.vue = nom; etat.exportVue = null;
   try { history.replaceState(null, "", "#" + nom); } catch (e) { /* sans importance */ }
   for (const b of document.querySelectorAll("#menu button")) b.setAttribute("aria-current", b.dataset.vue === nom ? "page" : "false");
   const v = el("div", {});
@@ -441,9 +459,9 @@ function dialogueMissions() {
 async function demarrer() {
   const menu = $("#menu");
   menu.append = ajouter;
-  for (const g of GROUPES) {
-    menu.append(el("h2", {}, g), ORDRE.filter(cle => VUES[cle] && VUES[cle][1] === g).map(cle => [cle, VUES[cle]]).map(([cle, v]) =>
-      el("button", { "data-vue": cle, onclick: () => afficher(cle) }, v[0])));
+  for (const [g, cles] of MENU) {
+    menu.append(el("h2", {}, g), cles.filter(cle => VUES[cle]).map(cle =>
+      el("button", { "data-vue": cle, onclick: () => afficher(cle) }, VUES[cle][0])));
   }
   $("#btn-missions").addEventListener("click", dialogueMissions);
   $("#choix-mission").addEventListener("change", e => ouvrirMission(e.target.value));

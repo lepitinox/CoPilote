@@ -359,13 +359,27 @@ def v_raci():
                   sous="R : réalise · A : approuve · C : est consulté · I : est informé")]
 
 
+HYP_COULEURS = {"confirmée": VERT, "à vérifier": ORANGE, "invalidée": ROUGE}
+
+
+def v_hypotheses():
+    hyp = db.lister("hypothese")
+    if not hyp:
+        return diapo("Hypothèses", texte(["Aucune hypothèse suivie."]))
+    return diapo("Hypothèses", tableau(
+        ["Hypothèse", "Catégorie", "Statut", "Porteur", "À vérifier avant", "Si elle est invalidée"],
+        [[h.get("libelle"), h.get("categorie"), h.get("statut"), h.get("porteur"), fr(h.get("echeance")), h.get("impact")] for h in hyp],
+        {(i, 2): _style(HYP_COULEURS.get(h.get("statut"), ("EEF0F3", DOUX))) for i, h in enumerate(hyp)},
+        [2.4, 0.9, 0.9, 1.2, 1, 2.4], taille=9))
+
+
 def v_mission():
     m = db.mission()
     champs = [("Mission", m.get("nom")), ("Client", m.get("client")),
               ("Objectif business", m.get("objectif_business")), ("Porteur business", m.get("porteur_business")),
               ("Objectif solution", m.get("objectif_solution")), ("Porteur solution", m.get("porteur_solution")),
               ("Objectif projet", m.get("objectif_projet")), ("Porteur projet", m.get("porteur_projet")),
-              ("Hypothèses du planning", m.get("hypotheses")), ("Date cible", fr(m.get("date_cible"))),
+              ("Date cible", fr(m.get("date_cible"))),
               ("Durée d'un sprint", f"{m.get('duree_sprint_jours') or 14} jours")]
     livrables = db.lister("livrable")
     return [diapo("Fiche mission", tableau(["Champ", "Valeur"], [list(c) for c in champs],
@@ -376,7 +390,8 @@ def v_mission():
                   f"{l['avancement']} %" if l.get("avancement") is not None else "",
                   l.get("statut"), l.get("tendance")] for l in livrables],
                 {(i, 4): _style({"vert": VERT, "orange": ORANGE, "rouge": ROUGE}.get(l.get("tendance"), ("FFFFFF", ENCRE)))
-                 for i, l in enumerate(livrables)}, [1.1, 2, 1, 3, 0.9]))]
+                 for i, l in enumerate(livrables)}, [1.1, 2, 1, 3, 0.9])),
+            v_hypotheses()]
 
 
 ETATS = {"vert": ("Vert", VERT), "orange": ("Orange", ORANGE), "rouge": ("Rouge", ROUGE),

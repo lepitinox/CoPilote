@@ -46,7 +46,12 @@ VUES.chiffrage = ["Chiffrage", FINANCES, async v => {
       tuile(`Majorations (+${maj} %)`, jours(t.retenu - m.base.retenu), Object.entries(m.majorations).map(([k, x]) => `${{ qualite: "qualité" }[k] || k} ${jours(x)}`).join(" · ")),
       tuile("Charge totale", jours(t.retenu), `fourchette ${jours(t.bas)} à ${jours(t.haut)}`),
       tuile("Montant", euros(m.montant), `fourchette ${euros(m.montant_bas)} à ${euros(m.montant_haut)}`),
-      tuile("TJM moyen", euros(c.tjm_moyen), m.sans_valorisation ? `${m.sans_valorisation} ligne(s) sans TJM` : "profils de la vue Budget")));
+      tuile("TJM moyen", euros(c.tjm_moyen), m.sans_valorisation ? `${m.sans_valorisation} ligne(s) sans TJM` : "profils de la vue Budget"),
+      tuile("Incertitude", m.incertitude.etendue == null ? "—" : "± " + pourcent(m.incertitude.etendue),
+        [`${pourcent(m.incertitude.part_sans_information)} de la charge sans information`,
+          m.incertitude.couverture_contingence != null ? el("div", {}, "contingence : ", pastille(m.incertitude.couverture_contingence >= 0.5 ? "vert" : "orange",
+            pourcent(m.incertitude.couverture_contingence) + " du risque haut")) : null,
+          m.incertitude.sans_profil ? el("div", {}, pastille("orange", `${m.incertitude.sans_profil} ligne(s) sans profil`)) : null])));
     const cols = mode === "macro"
       ? [["Lot", l => pastilleLot(l.lot)], ["Élément", l => [el("b", {}, l.libelle), l.hypothese && el("div", { style: "color:var(--doux);font-size:13px" }, l.hypothese)], "long"],
         ["Taille", l => l.taille || (l.jours_probable != null ? "saisie" : pastille("orange", "à dimensionner"))], ["Confiance", l => l.confiance || "moyenne"],
@@ -57,6 +62,10 @@ VUES.chiffrage = ["Chiffrage", FINANCES, async v => {
     v.append(el("h3", {}, "Éléments chiffrés"), tableau("estimation", m.lignes, cols, recharger));
   }
 
+  const hyps = (await api("GET", "hypothese")).filter(h => ["chiffrage", "périmètre", "budget"].includes(h.categorie));
+  v.append(section("Hypothèses du chiffrage", "hypothese", hyps, colonnesHypotheses, recharger));
+  if (hyps.some(h => h.statut === "invalidée"))
+    v.append(el("div", { class: "bandeau", style: "margin-top:8px" }, "Une hypothèse du chiffrage est invalidée : le chiffrage est à revoir, ou à défendre par une demande de changement."));
   if (c.comparaison.length && c.modes.macro.nb && c.modes.detaille.nb) {
     v.append(el("h3", {}, "Macro et détaillé, par lot (charge de base)"), el("div", { class: "cadre-table" }, el("table", {},
       el("thead", {}, el("tr", {}, ["Lot", "Macro", "Détaillé", "Écart"].map(x => el("th", {}, x)))),
@@ -102,11 +111,11 @@ function dialogueParametres(p, tjmCalcule) {
 
 // ---------- Budget ----------
 VUES.budget = ["Budget", FINANCES, async v => {
-  const [b, consommations, depenses, factures] = await Promise.all(
-    [api("GET", "budget"), api("GET", "consommation"), api("GET", "depense"), api("GET", "facture")]);
+  const [b, factures] = await Promise.all([api("GET", "budget"), api("GET", "facture")]);
   v.append(titreVue("Budget",
-    "Vendu, consommé, reste à faire et atterrissage, valorisés aux TJM des profils ; dépenses et échéancier de facturation. Le reste à faire en jours se met à jour sur chaque profil.",
-    el("button", { onclick: () => dialogueBudgetVendu(b.vendu) }, "Budget vendu")));
+    "Vais-je atterrir dans l'enveloppe ? Vendu, consommé, reste à faire et atterrissage, valorisés aux TJM des profils, et l'échéancier de facturation. Mettez à jour le reste à faire de chaque profil à chaque point budgétaire.",
+    el("button", { onclick: () => dialogueBudgetVendu(b.vendu) }, "Budget vendu"),
+    el("button", { onclick: () => afficher("budget_saisie") }, "Saisir temps et dépenses")));
   const ref_ = b.reference;
   v.append(el("div", { class: "grille" },
     tuile(b.reference_source === "vendu" ? "Budget vendu" : "Budget chiffré (non vendu)", euros(ref_),
@@ -131,18 +140,26 @@ VUES.budget = ["Budget", FINANCES, async v => {
     ["Profil", l => el("b", {}, l.nom)], ["TJM", l => euros(l.tjm), "num"], ["Coût / j", l => euros(l.cout_journalier), "num"],
     ["Consommé", l => jours(l.consomme_jours), "num"], ["Reste à faire", l => jours(l.raf_jours), "num"],
     ["Atterrissage", l => jours(l.atterrissage_jours), "num"], ["Montant", l => euros(l.atterrissage), "num"]], recharger));
-  v.append(section("Temps consommés", "consommation", [...consommations].reverse(), [
-    ["Mois", l => l.mois || "—"], ["Profil", l => l.profil || "—"], ["Jours", l => jours(l.jours), "num"],
-    ["Montant", l => euros((l.jours || 0) * (ref.profils.find(p => p.nom === l.profil)?.tjm || 0)), "num"], ["Commentaire", l => l.commentaire || "", "long"]], recharger));
-  v.append(section("Dépenses hors temps passé", "depense", depenses, [
-    ["Dépense", l => l.libelle, "long"], ["Catégorie", l => l.categorie || "—"], ["Date", l => dateFr(l.date)],
-    ["Montant", l => euros(l.montant), "num"], ["Statut", l => pastille(l.statut === "payée" ? "vert" : l.statut === "engagée" ? "neutre" : "orange", l.statut || "prévue")]], recharger));
   const auj = new Date().toISOString().slice(0, 10);
   v.append(section("Échéancier de facturation", "facture", factures, [
     ["Échéance", l => l.libelle, "long"], ["Jalon", l => l.jalon || "—"], ["Date prévue", l => dateFr(l.date_prevue)],
     ["Montant", l => euros(l.montant), "num"],
     ["Statut", l => [pastille(l.statut === "payée" ? "vert" : l.statut === "facturée" ? "neutre" : "orange", l.statut || "à facturer"),
       (l.statut || "à facturer") === "à facturer" && l.date_prevue && l.date_prevue < auj ? [" ", pastille("rouge", "En retard")] : null]]], recharger));
+}];
+
+// Saisie du budget : temps consommés et dépenses (l'analyse est dans la vue Budget).
+VUES.budget_saisie = ["Saisie du budget", "Saisie", async v => {
+  const [consommations, depenses] = await Promise.all([api("GET", "consommation"), api("GET", "depense")]);
+  v.append(titreVue("Saisie du budget",
+    "Les temps passés par mois et par profil, et les dépenses hors temps passé. Ils alimentent le consommé et l'atterrissage de la vue Budget.",
+    el("button", { onclick: () => afficher("budget") }, "Voir le budget")));
+  v.append(section("Temps consommés", "consommation", [...consommations].reverse(), [
+    ["Mois", l => l.mois || "—"], ["Profil", l => l.profil || "—"], ["Jours", l => jours(l.jours), "num"],
+    ["Montant", l => euros((l.jours || 0) * (ref.profils.find(p => p.nom === l.profil)?.tjm || 0)), "num"], ["Commentaire", l => l.commentaire || "", "long"]], recharger));
+  v.append(section("Dépenses hors temps passé", "depense", depenses, [
+    ["Dépense", l => l.libelle, "long"], ["Catégorie", l => l.categorie || "—"], ["Date", l => dateFr(l.date)],
+    ["Montant", l => euros(l.montant), "num"], ["Statut", l => pastille(l.statut === "payée" ? "vert" : l.statut === "engagée" ? "neutre" : "orange", l.statut || "prévue")]], recharger));
 }];
 
 function dialogueBudgetVendu(valeur) {

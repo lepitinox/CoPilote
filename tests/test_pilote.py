@@ -134,6 +134,55 @@ class Seance(unittest.TestCase):
         self.assertIn("Décisions à obtenir", titres)
 
 
+class Hypotheses(unittest.TestCase):
+    def test_invalidation_cree_un_risque_relie_une_seule_fois(self):
+        with db.dans(db.creer_mission("Hypothèses")):
+            h = donnees.creer_element("hypothese", {"libelle": "API livrée avant la recette", "categorie": "planning",
+                                                    "impact": "La recette glisse.", "lot": "V1", "porteur": "Tech lead"}, AUJ)
+            self.assertEqual((h["statut"], h["cree_le"]), ("à vérifier", AUJ.isoformat()))
+            h = donnees.modifier_element("hypothese", h["id"], {"statut": "invalidée"}, AUJ)
+            r = db.lire("risque", h["risque_id"])
+            self.assertEqual((r["titre"], r["probabilite"], r["lot"], r["porteur"]),
+                             ("Hypothèse invalidée : API livrée avant la recette", 3, "V1", "Tech lead"))
+            self.assertTrue(r["description"].startswith("La recette glisse."))
+            self.assertEqual(h["verifiee_le"], AUJ.isoformat())
+            donnees.modifier_element("hypothese", h["id"], {"statut": "à vérifier"}, AUJ)
+            donnees.modifier_element("hypothese", h["id"], {"statut": "invalidée"}, AUJ)
+            self.assertEqual(len(db.lister("risque")), 1)  # le risque existant est réutilisé
+
+    def test_bloc_long_cree_une_hypothese_de_chiffrage(self):
+        with db.dans(db.creer_mission("Bloc long")):
+            donnees.appliquer_bloc("recuperation-data", "long", "macro", "L1")
+            donnees.appliquer_bloc("recuperation-data", "rapide", "macro", "L1")
+            (h,) = db.lister("hypothese")
+            self.assertEqual((h["categorie"], h["statut"], h["lot"]), ("chiffrage", "à vérifier", "L1"))
+            self.assertIn("20 j", h["impact"])
+
+    def test_reprise_de_l_ancien_texte(self):
+        with db.dans(db.creer_mission("Ancienne")):
+            db.modifier("mission", 1, {"hypotheses": "Équipe complète ; API livrée\nDonnées disponibles.",
+                                       "hypotheses_reprises": None})
+            db.initialiser()
+            db.initialiser()  # une seule reprise
+            self.assertEqual([h["libelle"] for h in db.lister("hypothese")], ["Équipe complète", "API livrée", "Données disponibles"])
+
+    def test_a_traiter_seance_et_incertitude(self):
+        with db.dans(mission_demo("Hypothèses démo")):
+            genres = {i["genre"] for i in pilote.a_traiter(AUJ)["items"]}
+            self.assertIn("hypothese", genres)
+            e = db.lister("lot_element", "axe = 'prerequis'")[0]
+            donnees.modifier_element("lot_element", e["id"], {"statut": "bloquant"}, AUJ)
+            bloquants = [i for i in pilote.a_traiter(AUJ)["items"] if i["genre"] == "prerequis"]
+            self.assertEqual((bloquants[0]["groupe"], bloquants[0]["actions"][0]["champs"]), ("maintenant", {"statut": "obtenu"}))
+            comite = next(i for i in db.lister("instance") if i["nom"] == "Comité sponsor")
+            s = pilote.preparer_seance(comite["id"], AUJ)
+            self.assertIn("hypotheses", {p["cle"] for p in s["ordre_du_jour"]})
+            self.assertEqual(s["depassement_minutes"], 0)
+            inc = donnees.chiffrage()["modes"]["macro"]["incertitude"]
+            self.assertGreater(inc["part_sans_information"], 0.5)  # le macro de la démo est surtout « faible »
+            self.assertIsNotNone(inc["couverture_contingence"])
+
+
 class Api(unittest.TestCase):
     def test_routes_et_mcp(self):
         import threading

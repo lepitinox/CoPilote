@@ -7,7 +7,8 @@ const GROUPES_A_TRAITER = {
   surveiller: ["À surveiller", "Rien d'urgent, mais à ne pas laisser dériver."],
 };
 const GENRES = { action: "Action", decision: "Décision", risque: "Risque", jalon: "Jalon", facture: "Facturation",
-  attente: "Client", compte_rendu: "Compte rendu", sprint: "Sprint", meteo: "Météo", reunion: "Réunion" };
+  attente: "Client", compte_rendu: "Compte rendu", sprint: "Sprint", meteo: "Météo", reunion: "Réunion",
+  hypothese: "Hypothèse", prerequis: "Prérequis" };
 
 VUES.aujourdhui = ["À traiter", AUJOURDHUI, async v => {
   const t = await api("GET", "a_traiter");
@@ -89,3 +90,16 @@ async function dialogueSeance(ident) {
 }
 const agendaMinutes = h => { const m = /^(\d{1,2}):(\d{2})/.exec(h || ""); return m ? +m[1] * 60 + +m[2] : null; };
 const enHeure = m => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+
+// Indicateurs : le rappel du sprint et des KPI à collecter est rangé en bas de page, repliable.
+{
+  const indicateurs = VUES.kpi[2];
+  VUES.kpi[2] = async v => {
+    await indicateurs(v);
+    const rappel = el("div", {});
+    await VUES.sprintkpi[2](rappel);
+    rappel.firstElementChild?.remove();  // barre de titre et exports de la page d'origine
+    v.append(el("details", { class: "carte", style: "margin-top:16px" },
+      el("summary", { style: "cursor:pointer;font-weight:600" }, "Comment fonctionne un sprint et quels KPI collecter"), rappel));
+  };
+}

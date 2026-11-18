@@ -85,7 +85,16 @@ def chiffrage(mission, estimations, profils):
         tjm_pondere = montant_base / base["retenu"] if base["retenu"] and montant_base else tjm_def
         majorations = {k: round(base["retenu"] * (_n(v) or 0), 2) for k, v in p["majorations"].items()}
         total = {k: round(base[k] * (1 + taux_maj), 2) for k in base}
+        part_faible = sum(l["retenu"] or 0 for l in lignes if (l.get("confiance") == "faible" or l.get("niveau") == "long")) / base["retenu"] \
+            if base["retenu"] else None
+        etendue = (base["haut"] - base["bas"]) / base["retenu"] / 2 if base["retenu"] else None
+        risque_haut = base["haut"] - base["retenu"]
+        contingence = base["retenu"] * (_n(p["majorations"].get("contingence")) or 0)
         modes[mode] = {
+            "incertitude": {"part_sans_information": round(part_faible, 3) if part_faible is not None else None,
+                            "etendue": round(etendue, 3) if etendue is not None else None,
+                            "couverture_contingence": round(contingence / risque_haut, 3) if risque_haut > 0 else None,
+                            "sans_profil": sum(1 for l in lignes if mode == "detaille" and not l.get("profil"))},
             "lignes": lignes, "base": {k: round(v, 2) for k, v in base.items()},
             "majorations": majorations, "total_jours": total,
             "montant": round(total["retenu"] * tjm_pondere, 2) if tjm_pondere else None,
