@@ -18,6 +18,7 @@ import donnees  # noqa: E402
 import exports  # noqa: E402
 import finances  # noqa: E402
 import llm  # noqa: E402
+import pilote  # noqa: E402
 import meteo  # noqa: E402
 
 PORT = int(os.environ.get("COPILOTE_PORT", "8765"))
@@ -315,7 +316,7 @@ class Requete(BaseHTTPRequestHandler):
             return None
         export = re.fullmatch(r"/api/export/(\w+)\.(pptx|xlsx)", chemin)
         if export and methode == "GET":
-            meteo_id = (self.requete.get("meteo") or [""])[0]
+            meteo_id = (self.requete.get("meteo") or self.requete.get("instance") or [""])[0]
             octets, nom = exports.exporter(export.group(1), export.group(2),
                                            int(meteo_id) if meteo_id.isdigit() else None, aujourdhui())
             return Fichier(octets, GENRES[export.group(2)], nom)
@@ -351,6 +352,10 @@ class Requete(BaseHTTPRequestHandler):
                 return synthese()
             if nom == "suivi_risques":
                 return suivi_risques()
+            if nom == "a_traiter":
+                return pilote.a_traiter(aujourdhui())
+            if nom == "glissements":
+                return pilote.glissements(aujourdhui())
             if nom == "chiffrage":
                 return donnees.chiffrage()
             if nom == "budget":
@@ -370,6 +375,11 @@ class Requete(BaseHTTPRequestHandler):
                                   int(q["avant"]) if q["avant"].isdigit() else None)
             if nom in LISIBLES and not action:
                 return db.lister(nom)
+        if methode == "GET" and nom == "instance" and ident and action == "seance":
+            try:
+                return pilote.preparer_seance(ident, aujourdhui())
+            except ValueError as e:
+                raise Erreur(str(e), 404)
         if methode == "GET" and nom == "instance" and action == "ics":
             liste = [db.lire("instance", ident)] if ident else db.lister("instance")
             if not liste or liste[0] is None:

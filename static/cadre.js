@@ -87,6 +87,8 @@ VUES.storymap = ["Story map", CADRE, async v => {
 }];
 
 // ---------- 4. Macro-planning à la maille du mois ----------
+const glissementJours = j => { const a = jour(j.date), b = jour(j.date_initiale); return a && b ? Math.round((a - b) / 864e5) : 0; };
+const dureeLisible = n => (Math.abs(n) < 14 ? `${n} j` : `${Math.round(n / 7)} semaines`);
 VUES.planning = ["Macro-planning", CADRE, async v => {
   const [activites, jalons, m] = await Promise.all([api("GET", "activite"), api("GET", "jalon"), api("GET", "mission")]);
   v.append(titreVue("Macro-planning",
@@ -112,10 +114,15 @@ VUES.planning = ["Macro-planning", CADRE, async v => {
         el("div", { class: "mois", style: `grid-template-columns:repeat(${mois.length},1fr)` },
           mois.map(d => el("span", {}, MOIS[d.getMonth()] + " " + String(d.getFullYear()).slice(2)))),
         auj >= debut && auj < fin && el("div", { class: "aujourdhui", style: `left:${pos(auj)}%`, title: "Aujourd'hui" }))),
-    rang("Jalons", jalons.filter(j => jour(j.date)).map((j, i) => el("div", { class: "ligne", style: i ? "margin-top:-8px" : "" },
-      el("button", { class: "jalon " + (j.statut === "atteint" ? "atteint" : "") + (pos(jour(j.date)) > 62 ? " gauche" : ""), style: `left:${pos(jour(j.date))}%`,
-        title: `${j.libelle} — ${dateFr(j.date)} (${j.statut || "à venir"})`, onclick: () => formulaire("jalon", j, recharger) },
-        el("i", {}), `${j.libelle} · ${dateFr(j.date)}`)))),
+    rang("Jalons", jalons.filter(j => jour(j.date)).map((j, i) => {
+      const g = glissementJours(j), ref = jour(j.date_initiale);
+      return el("div", { class: "ligne", style: i ? "margin-top:-8px" : "" },
+        g && ref && ref >= debut && ref < fin ? el("span", { class: "reference", style: `left:${pos(ref)}%`, title: `Engagement initial : ${dateFr(j.date_initiale)}` }) : null,
+        el("button", { class: "jalon " + (j.statut === "atteint" ? "atteint" : "") + (pos(jour(j.date)) > 62 ? " gauche" : ""), style: `left:${pos(jour(j.date))}%`,
+          title: `${j.libelle} — ${dateFr(j.date)} (${j.statut || "à venir"})` + (g ? ` · engagement initial ${dateFr(j.date_initiale)}` : ""),
+          onclick: () => formulaire("jalon", j, recharger) },
+          el("i", {}), `${j.libelle} · ${dateFr(j.date)}`, g > 0 ? el("span", { class: "report" }, ` · reporté de ${dureeLisible(g)}`) : null));
+    })),
     pistes.map(p => rang(p, activites.filter(a => (a.piste || "Autres") === p && jour(a.debut) && jour(a.fin)).map(a => {
       const d = jour(a.debut), f = new Date(jour(a.fin).getTime() + 864e5);
       const largeur = Math.max(pos(f) - pos(d), 1.5), courte = largeur < 16, aGauche = pos(f) > 72;
@@ -125,7 +132,8 @@ VUES.planning = ["Macro-planning", CADRE, async v => {
         courte && el("span", { class: "hors", style: aGauche ? `right:${100 - pos(d)}%;padding-right:6px` : `left:${pos(f)}%;padding-left:6px` }, a.libelle));
     }))))),
     el("div", { class: "barre", style: "color:var(--doux);font-size:13px" },
-      el("span", {}, "◆ jalon (vert : atteint)"), el("span", {}, "· barre grise : activité terminée"), el("span", {}, "· trait rouge : aujourd'hui")));
+      el("span", {}, "◆ jalon (vert : atteint)"), el("span", {}, "· ◇ date d'engagement initiale d'un jalon reporté"),
+      el("span", {}, "· barre grise : activité terminée"), el("span", {}, "· trait rouge : aujourd'hui")));
 }];
 
 // ---------- 5. Organisation : l'entreprise en adhérence avec l'équipe projet ----------
@@ -208,8 +216,11 @@ VUES.gouvernance = ["Gouvernance", CADRE, async v => {
             sansEmail ? el("div", { style: "color:var(--orange);font-size:12px" }, `${sansEmail} sans e-mail : absent(s) de l'invitation`) : null),
           el("td", { style: "min-width:150px" }, creneauInstance(i)),
           el("td", { style: "white-space:nowrap" }, i.duree_min ? `${i.duree_min} min` : i.duree || "—"),
-          el("td", {}, i.premiere && i.heure ? el("button", { title: "Invitation de cette instance (.ics)",
-            onclick: e => { e.stopPropagation(); telechargerFichier(`/api/instance/${i.id}/ics`, e.target); } }, ".ics") : null));
+          el("td", { style: "white-space:nowrap" },
+            i.recurrence !== "quotidienne" && el("button", { class: "principal", title: "Ordre du jour minuté à partir des décisions, actions, risques, jalons et attentes",
+              onclick: e => { e.stopPropagation(); dialogueSeance(i.id); } }, "Préparer"), " ",
+            i.premiere && i.heure ? el("button", { title: "Invitation de cette instance (.ics)",
+              onclick: e => { e.stopPropagation(); telechargerFichier(`/api/instance/${i.id}/ics`, e.target); } }, ".ics") : null));
       })])))));
 
   const auj = new Date(); auj.setHours(0, 0, 0, 0);

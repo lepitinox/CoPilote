@@ -79,7 +79,8 @@ const AXES = { contenu: "Livré dans ce lot", prerequis: "Prérequis", pour_qui:
   comment: "Comment (canaux)", quoi: "Quoi (produits)", fonctionnalite: "Grâce à quelles fonctionnalités" };
 const ENTITES = {
   jalon: { nom: "jalon", champs: [
-    ["libelle", "Libellé", "texte", null, true], ["date", "Date", "date"],
+    ["libelle", "Libellé", "texte", null, true], ["date", "Date prévue", "date"],
+    ["date_initiale", "Date de référence (engagement) — à changer seulement après un avenant", "date"],
     ["version", "Lot", "choix", nomsLots], ["statut", "Statut", "choix", ["à venir", "atteint", "en retard"]]] },
   livrable: { nom: "livrable", champs: [
     ["chantier", "Chantier", "texte"], ["libelle", "Livrable", "texte"],
@@ -110,7 +111,8 @@ const ENTITES = {
   lot: { nom: "lot", champs: [
     ["nom", "Nom court (V1, V2…)", "texte"], ["rang", "Ordre d'affichage", "nombre"],
     ["titre", "Titre", "texte", null, true], ["periode", "Période affichée (ex. Mars 2027, T2 2027)", "texte"],
-    ["date", "Date de livraison", "date"], ["statut", "Statut", "choix", ["à venir", "en cours", "livré", "à arbitrer"]]] },
+    ["date", "Date de livraison prévue", "date"], ["date_initiale", "Date de référence (engagement)", "date"],
+    ["statut", "Statut", "choix", ["à venir", "en cours", "livré", "à arbitrer"]]] },
   lot_element: { nom: "élément de lot", champs: [
     ["lot", "Lot", "choix", nomsLots], ["axe", "Rubrique", "choix", Object.entries(AXES)],
     ["libelle", "Libellé", "texte", null, true], ["detail", "Précision", "texte", null, true]] },
@@ -316,10 +318,10 @@ function dialogueModeles(vue) {
 // ---------- navigation ----------
 // VUES[clé] = [libellé du menu, groupe, fonction de rendu]
 const VUES = {};
-const GROUPES = ["Cadre de la mission", "Pilotage", "Finances", "Saisie"];
-const ORDRE = ["route", "lotissement", "storymap", "planning", "organisation", "gouvernance", "sprintkpi", "raci",
+const GROUPES = ["Aujourd'hui", "Cadre de la mission", "Pilotage", "Finances", "Saisie"];
+const ORDRE = ["aujourdhui", "route", "lotissement", "storymap", "planning", "organisation", "gouvernance", "sprintkpi", "raci",
   "mission", "synthese", "kpi", "risques", "attentes", "decisions", "meteo", "chiffrage", "budget", "sprints", "cr", "historique"];
-const etat = { vue: "route", cr: null, meteo: null, edition: false, mission: null, missions: [] };
+const etat = { vue: "aujourdhui", cr: null, meteo: null, edition: false, mission: null, missions: [] };
 
 async function afficher(nom) {
   etat.vue = nom;
@@ -452,6 +454,6 @@ async function demarrer() {
     etat.mission = etat.missions.some(m => m.cle === memo) ? memo : r.derniere;
     remplirChoixMission();
     await entete();
-    await afficher(VUES[depart] ? depart : "route");
+    await afficher(VUES[depart] ? depart : "aujourdhui");
   } catch (e) { dire(e.message, true); }
 }

@@ -22,6 +22,7 @@ from mcp.server.mcpserver.exceptions import ToolError  # noqa: E402
 from mcp.types import ToolAnnotations  # noqa: E402
 
 import agenda  # noqa: E402
+import pilote  # noqa: E402
 import catalogue  # noqa: E402
 import db  # noqa: E402
 import donnees  # noqa: E402
@@ -142,10 +143,11 @@ def fiche_mission(mission: str | None = None) -> dict[str, Any]:
 
 @serveur.tool(annotations=LECTURE)
 def synthese(mission: str | None = None) -> dict[str, Any]:
-    """Synthèse calculée : tendance (vert / orange / rouge), alertes de niveau projet (2) et sponsor (3),
-    KPI des sprints, atterrissage, budget et attentes du client."""
+    """Synthèse calculée : réponses aux trois questions du sponsor (délai, budget, client) avec leur état,
+    décisions à obtenir, tendance et son historique, alertes de niveau projet (2) et sponsor (3),
+    KPI des sprints, atterrissage."""
     with _sur(mission) as cle:
-        return {"cle": cle, **donnees.synthese(_auj())}
+        return {"cle": cle, **donnees.synthese(_auj())}  # inclut reponses (délai, budget, client)
 
 
 @serveur.tool(annotations=LECTURE)
@@ -222,6 +224,33 @@ def exporter_mission(mission: str | None = None) -> dict[str, Any]:
     """Export complet de la mission (format copilote-mission : toutes les tables et l'historique)."""
     with _sur(mission):
         return db.exporter_mission()
+
+
+@serveur.tool(annotations=LECTURE)
+def a_traiter(mission: str | None = None) -> dict[str, Any]:
+    """Ce que le pilote doit faire, classé : maintenant (retards, points critiques), cette semaine
+    (échéances, réunions à préparer, saisies attendues), à surveiller. Chaque élément indique la table
+    et l'id concernés, et les modifications directes possibles (champs à écrire avec modifier_element)."""
+    with _sur(mission):
+        return pilote.a_traiter(_auj())
+
+
+@serveur.tool(annotations=LECTURE)
+def preparer_seance(instance: int, mission: str | None = None) -> dict[str, Any]:
+    """Ordre du jour minuté d'une instance de gouvernance (id de la table instance), adapté à son
+    type (comité, point de suivi, rituel agile), avec le contenu de chaque point et les messages clés."""
+    with _sur(mission):
+        try:
+            return pilote.preparer_seance(instance, _auj())
+        except ValueError as e:
+            raise ToolError(str(e)) from None
+
+
+@serveur.tool(annotations=LECTURE)
+def glissements(mission: str | None = None) -> dict[str, Any]:
+    """Jalons et lots avec leur date de référence (engagement), l'écart en jours et le nombre de reports."""
+    with _sur(mission):
+        return pilote.glissements(_auj())
 
 
 @serveur.tool(annotations=LECTURE)

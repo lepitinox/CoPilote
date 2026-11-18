@@ -29,13 +29,15 @@ def _charger(aujourdhui):
         "hypotheses": "Équipe de 4 développeurs complète ; API contrats livrée par l'équipe SI Contrats avant la recette.",
         "date_cible": j(84), "duree_sprint_jours": 14, "seuils": json.dumps({}),
     })
-    for lib, d, v, s in [
-        ("Dossier d'architecture validé", j(-40), "V1", "atteint"),
-        ("Lancement des tests utilisateurs", j(35), "V1", "à venir"),
-        ("Mise en service V1", j(84), "V1", "à venir"),
-        ("Ouverture du parcours mobile", j(170), "V2", "à venir"),
+    # Date de référence : l'engagement initial. Les tests utilisateurs ont déjà glissé de trois
+    # semaines, à cause de l'API contrats.
+    for lib, d, ref, v, s in [
+        ("Dossier d'architecture validé", j(-40), j(-47), "V1", "atteint"),
+        ("Lancement des tests utilisateurs", j(35), j(14), "V1", "à venir"),
+        ("Mise en service V1", j(84), j(84), "V1", "à venir"),
+        ("Ouverture du parcours mobile", j(170), j(170), "V2", "à venir"),
     ]:
-        db.creer("jalon", {"libelle": lib, "date": d, "version": v, "statut": s})
+        db.creer("jalon", {"libelle": lib, "date": d, "date_initiale": ref, "version": v, "statut": s})
     for ch, lib, av, st, t in [
         ("Produit", "Backlog V1", 90, "Affiné jusqu'au sprint 9", "vert"),
         ("Produit", "Maquettes", 100, "Validées", "vert"),

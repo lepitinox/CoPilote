@@ -64,7 +64,7 @@ Ce que l'assistant peut faire :
   `budget`, `attentes_client`, `gouvernance`, `historique`, `exporter_mission`.
 - **Écrire** : `creer_element`, `modifier_element`, `supprimer_element`, `modifier_fiche_mission`,
   `annuler_modification`, `proposer_creneaux`, `creer_mission`, `chiffrer_avec_bloc`
-  (avec `catalogue_chiffrage` en lecture).
+  (avec `catalogue_chiffrage`, `a_traiter`, `preparer_seance` et `glissements` en lecture).
 - **Prompts prêts à l'emploi** : `revue_hebdomadaire`, `integrer_compte_rendu`, `preparer_comite`.
 - **Ressources** : `copilote://missions`, `copilote://modele`, `copilote://mission/{cle}/synthese`.
 
@@ -84,6 +84,13 @@ sont envoyés à l'API. À n'utiliser sur des données client qu'une fois le mod
 du modèle validé (décision D3 de la note de cadrage).
 
 ## Vues
+
+**Aujourd'hui** : la page « À traiter », ouverte par défaut. Elle rassemble ce que la mission
+attend du pilote, classé en *maintenant* (actions et décisions en retard, risques critiques sans
+porteur ou plan, jalons dépassés, factures à émettre, attentes à recadrer, sprint à saisir),
+*cette semaine* (échéances, réunions à préparer, météo à générer, propositions à valider) et
+*à surveiller* (décisions qui traînent, attentes à revoir). Les boutons agissent directement
+(« Marquer faite », « Marquer facturée », « Revue faite aujourd'hui », « Préparer »…).
 
 **Cadre de la mission** : feuille de route (lots, grande temporalité, prérequis), lotissement
 détaillé (pour qui, comment, quoi, grâce à quoi), story map, macro-planning au mois,
@@ -113,6 +120,23 @@ récurrence, un créneau et une durée. « Proposer des créneaux » les pose à
 sprints, sans chevauchement sur huit semaines, hors week-end et hors pause de midi.
 « Télécharger les invitations » produit un fichier `.ics` (séries récurrentes, participants
 ayant un e-mail) à importer dans Outlook ou Google Agenda, d'où l'on envoie les invitations.
+
+### Synthèse, glissements et préparation de séance
+
+- **Synthèse** : les trois questions du sponsor, chacune avec un état (vert, orange, rouge, non
+  mesurable), une phrase et son détail — délai (atterrissage des sprints, sinon jalons et date
+  cible), budget (atterrissage et vendu), client (attentes) — puis les décisions à obtenir avec
+  leur décideur et leur ancienneté, et la tendance des dernières météos.
+- **Glissements** : jalons et lots ont une date de référence (l'engagement), posée à la première
+  date saisie et modifiable seulement après un avenant. Le macro-planning montre la date initiale
+  et le report ; un report de plus de deux semaines déclenche une alerte (sponsor s'il dépasse la
+  date cible), un jalon dépassé non atteint aussi. Le nombre de reports vient de l'historique.
+- **Préparer une séance** (bouton de chaque instance, ou depuis À traiter) : ordre du jour minuté
+  selon le type de séance — comité (trajectoire, jalons, risques critiques, attentes, décisions,
+  budget), point de suivi (actions, risques, jalons, attentes des participants), rituels agiles
+  (capacité, chiffres du sprint, demandes de périmètre) — avec les horaires, les messages clés,
+  l'export PowerPoint et le texte à copier dans l'invitation. Le temps non utilisé va aux
+  échanges plutôt que d'allonger les points.
 
 ### Historique des modifications
 
@@ -193,6 +217,7 @@ modèle par défaut.
 | `calculs.py` | KPI, atterrissage, déclencheurs, contrôles — déterministe, sans LLM |
 | `catalogue_criteres.py` | Critères de choix des trois niveaux de chaque bloc |
 | `catalogue.py` | Catalogue des blocs de chiffrage à trois niveaux, personnalisation, application |
+| `pilote.py` | Besoins du pilote : à traiter, glissements, trois réponses, préparation de séance |
 | `finances.py` | Chiffrage en deux modes, budget, attentes du client — déterministe, sans LLM |
 | `donnees.py` | Données composées partagées par l'API et les exports |
 | `meteo.py` | Assemblage de la météo hebdomadaire |
@@ -206,8 +231,9 @@ modèle par défaut.
 | `static/cadre.js` | Vues du cadre : feuille de route, lotissement, story map, macro-planning, organisation, gouvernance, sprint et KPI, RACI |
 | `static/pilotage.js` | Vues de pilotage : synthèse, suivi des risques, décisions, météo, saisies |
 | `static/graphes.js` | Indicateurs en graphiques |
+| `static/pilote.js` | Page À traiter et préparation de séance |
 | `static/finances.js` | Chiffrage, budget, attentes du client |
-| `tests/` | `test_calculs.py`, `test_agenda_exports.py`, `test_missions.py`, `test_finances.py`, `test_mcp.py`, `test_catalogue.py` (chacun : `python tests/<fichier>`) |
+| `tests/` | `test_calculs.py`, `test_agenda_exports.py`, `test_missions.py`, `test_finances.py`, `test_mcp.py`, `test_catalogue.py`, `test_pilote.py` (chacun : `python tests/<fichier>`) |
 
 ## Principes tenus par le code
 

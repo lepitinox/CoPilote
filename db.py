@@ -54,8 +54,9 @@ TABLES = {
                 "reponse": "TEXT", "prochaine_action": "TEXT", "echeance": "TEXT",
                 "revue_le": "TEXT"},
     # Cadre de la mission
+    # date_initiale : date de référence (engagement), pour mesurer les glissements.
     "lot": {"nom": "TEXT", "titre": "TEXT", "periode": "TEXT", "date": "TEXT",
-            "statut": "TEXT", "rang": "INTEGER"},
+            "statut": "TEXT", "rang": "INTEGER", "date_initiale": "TEXT"},
     # axe : contenu | prerequis | pour_qui | comment | quoi | fonctionnalite
     "lot_element": {"lot": "TEXT", "axe": "TEXT", "libelle": "TEXT", "detail": "TEXT"},
     "story": {"etape": "TEXT", "rang_etape": "INTEGER", "libelle": "TEXT", "lot": "TEXT",
@@ -72,7 +73,7 @@ TABLES = {
                  "rang": "INTEGER", "participants_ids": "TEXT", "recurrence": "TEXT",
                  "premiere": "TEXT", "heure": "TEXT", "duree_min": "INTEGER"},
     "raci": {"domaine": "TEXT", "activite": "TEXT", "valeurs": "TEXT", "rang": "INTEGER"},
-    "jalon": {"libelle": "TEXT", "date": "TEXT", "version": "TEXT", "statut": "TEXT"},
+    "jalon": {"libelle": "TEXT", "date": "TEXT", "version": "TEXT", "statut": "TEXT", "date_initiale": "TEXT"},
     "livrable": {
         "chantier": "TEXT", "libelle": "TEXT", "avancement": "INTEGER",
         "statut": "TEXT", "tendance": "TEXT",
@@ -317,6 +318,9 @@ def initialiser():
                 "INSERT INTO mission (id, nom, duree_sprint_jours, seuils) VALUES (1, ?, 14, ?)",
                 ("Nouvelle mission", "{}"),
             )
+        # Jalons et lots d'avant les dates de référence : la date actuelle devient la référence.
+        for t in ("jalon", "lot"):
+            c.execute(f"UPDATE {t} SET date_initiale = date WHERE date_initiale IS NULL AND date IS NOT NULL AND date != ''")
         if not c.execute("SELECT 1 FROM metier").fetchone():
             c.executemany("INSERT INTO metier (nom, rang) VALUES (?, ?)",
                           [(n, i) for i, n in enumerate(METIERS_DEFAUT)])
@@ -448,8 +452,13 @@ def lire(table, ident):
         return _ligne(c, table, ident)
 
 
+AVEC_REFERENCE = ("jalon", "lot")  # la première date annoncée devient la date de référence
+
+
 def creer(table, donnees):
     d = _filtrer(table, donnees)
+    if table in AVEC_REFERENCE and d.get("date") and not d.get("date_initiale"):
+        d["date_initiale"] = d["date"]
     with connexion() as c:
         if d:
             cols = ", ".join(d)
@@ -476,6 +485,10 @@ def modifier(table, ident, donnees):
     d = _filtrer(table, donnees)
     with connexion() as c:
         avant = _ligne(c, table, ident)
+        if table in AVEC_REFERENCE and avant and not avant.get("date_initiale") and "date_initiale" not in d:
+            reference = avant.get("date") or d.get("date")
+            if reference:
+                d["date_initiale"] = reference
         if d and avant:
             affect = ", ".join(f"{k} = ?" for k in d)
             c.execute(f"UPDATE {table} SET {affect} WHERE id = ?", (*d.values(), ident))

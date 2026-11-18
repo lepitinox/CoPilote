@@ -78,20 +78,27 @@ def suivi_attentes(aujourdhui=None):
 
 
 def alertes_complementaires(aujourdhui=None):
-    return budget(aujourdhui)["alertes"] + suivi_attentes(aujourdhui)["alertes"]
+    """Déclencheurs hors livraison agile : budget, attentes du client, reports de jalons."""
+    import pilote  # import tardif : pilote s'appuie sur ce module
+    return (budget(aujourdhui)["alertes"] + suivi_attentes(aujourdhui)["alertes"]
+            + pilote.alertes_glissements(pilote.glissements(aujourdhui), db.mission(), aujourdhui))
 
 
 def synthese(aujourdhui=None):
     auj = aujourdhui or dt.date.today()
     # Les déclencheurs du budget et des attentes du client s'ajoutent à ceux de la livraison.
+    import pilote
     b, a = budget(auj), suivi_attentes(auj)
-    d = meteo.donnees(*etat_mission(), auj, b["alertes"] + a["alertes"])
+    d = meteo.donnees(*etat_mission(), auj, b["alertes"] + a["alertes"]
+                      + pilote.alertes_glissements(pilote.glissements(auj), db.mission(), auj))
     return {
         "semaine": d["semaine"], "tendance": d["tendance_calculee"], "alertes": d["alertes"],
         "budget": {k: b[k] for k in ("reference", "reference_source", "consomme", "atterrissage", "ecart", "taux_consomme")},
         "attentes": {"total": len(a["attentes"]),
                      "insatisfaites": sum(1 for x in a["attentes"] if isinstance(x.get("satisfaction"), int) and x["satisfaction"] <= 2),
                      "a_recadrer": sum(1 for x in a["attentes"] if x.get("position") == "à recadrer")},
+        "reponses": pilote.reponses(auj), "decisions_en_attente": pilote.decisions_en_attente(auj),
+        "tendances": pilote.historique_tendance(),
         "kpi": d["kpi"], "atterrissage": d["atterrissage"],
         "seuils": calculs.seuils(db.mission()),
         "propositions_en_attente": len(db.lister("proposition", "statut = 'en attente'")),

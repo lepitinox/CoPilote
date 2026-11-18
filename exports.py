@@ -47,6 +47,7 @@ LIBELLES = {
     "synthese": "Synthèse", "kpi": "Indicateurs", "risques": "Suivi des risques",
     "decisions": "Décisions et actions", "meteo": "Météo hebdomadaire", "sprints": "Sprints",
     "chiffrage": "Chiffrage", "budget": "Budget", "attentes": "Attentes du client",
+    "seance": "Préparation de séance",
 }
 SANS_EXCEL = {"meteo"}
 TAILLE_MAX_MODELE = 25 * 1024 * 1024
@@ -378,31 +379,61 @@ def v_mission():
                  for i, l in enumerate(livrables)}, [1.1, 2, 1, 3, 0.9]))]
 
 
+ETATS = {"vert": ("Vert", VERT), "orange": ("Orange", ORANGE), "rouge": ("Rouge", ROUGE),
+         "inconnu": ("Non mesurable", ("EEF0F3", DOUX))}
+
+
 def v_synthese(aujourdhui=None):
     s = donnees.synthese(aujourdhui)
-    k, a = s["kpi"], s["atterrissage"]
-    if not k:
-        return [diapo("Synthèse", texte(["Aucun sprint saisi."]))]
-    if a["atteignable"]:
-        fin = fr(a["date_fin_estimee"])
-        note = ("Pas de date cible" if a["ecart_sprints"] is None else "Dans la cible" if a["ecart_sprints"] == 0
-                else f"+{a['ecart_sprints']} sprints après la cible")
-    else:
-        fin, note = "Non calculable", "Le backlog ne se vide pas assez vite"
-    taux = f"{round(k['taux_realisation'] * 100)} %" if k["taux_realisation"] is not None else "—"
-    tu = tuiles([("Tendance calculée", s["tendance"].capitalize(), f"{len(s['alertes'])} alerte(s)"),
-                 ("Fin estimée", fin, note),
-                 (f"Sprint {k['sprint']} : réalisé / prévu", f"{_fmt(k['realise'])} / {_fmt(k['prevu'])}", taux),
-                 ("Reste à faire", f"{_fmt(k['reste'])} pts", f"{_fmt(a['consommation_nette'])} pts nets par sprint"),
-                 ("Points ajoutés", _fmt(k["ajoute"]), f"marge : {_fmt(s['seuils']['marge_ajout'])}"),
-                 ("Moral", f"{k['moral']} / 5" if k["moral"] else "—", "")])
-    alertes = s["alertes"]
-    tab = tableau(["Niveau", "Alerte", "Détail"],
-                  [["Sponsor" if x["niveau"] >= 3 else "Projet", x["titre"], x["detail"]] for x in alertes],
-                  {(i, 0): _style(ROUGE if x["niveau"] >= 3 else ORANGE) for i, x in enumerate(alertes)},
-                  [0.8, 3, 3.5])
-    return [diapo("Synthèse", tu, tab if alertes else texte(["Aucun déclencheur atteint."]), sous=s["semaine"])]
+    rep, k, a = s["reponses"], s["kpi"], s["atterrissage"]
+    lignes = [[t, ETATS[rep[c]["etat"]][0], rep[c]["phrase"], " · ".join(rep[c]["details"])]
+              for c, t in (("delai", "Délai"), ("budget", "Budget"), ("client", "Client"))]
+    styles = {(i, 1): _style(ETATS[rep[c]["etat"]][1], centre=True) for i, c in enumerate(("delai", "budget", "client"))}
+    dec = s["decisions_en_attente"]
+    diapos = [diapo("Synthèse", tableau(["Question", "État", "Réponse", "Détail"], lignes, styles, [0.9, 1, 3.2, 3]),
+                    tableau(["Décision à obtenir", "Décideur", "Échéance", "En attente depuis"],
+                            [[d["titre"], d.get("porteur") or "À désigner", fr(d.get("echeance")) + (" — en retard" if d["en_retard"] else ""),
+                              f"{d['age_jours']} j" if d.get("age_jours") is not None else ""] for d in dec],
+                            {(i, 2): _style(ROUGE) for i, d in enumerate(dec) if d["en_retard"]}, [3.4, 1.6, 1.6, 1.2])
+                    if dec else texte(["Aucune décision en attente."]),
+                    sous=f"{s['semaine']} — tendance calculée : {s['tendance']}")]
+    if k:
+        if a["atteignable"]:
+            fin = fr(a["date_fin_estimee"])
+            note = ("Pas de date cible" if a["ecart_sprints"] is None else "Dans la cible" if a["ecart_sprints"] == 0
+                    else f"+{a['ecart_sprints']} sprints après la cible")
+        else:
+            fin, note = "Non calculable", "Le backlog ne se vide pas assez vite"
+        taux = f"{round(k['taux_realisation'] * 100)} %" if k["taux_realisation"] is not None else "—"
+        diapos.append(diapo("Synthèse — livraison", tuiles([
+            ("Fin estimée", fin, note),
+            (f"Sprint {k['sprint']} : réalisé / prévu", f"{_fmt(k['realise'])} / {_fmt(k['prevu'])}", taux),
+            ("Reste à faire", f"{_fmt(k['reste'])} pts", f"{_fmt(a['consommation_nette'])} pts nets par sprint"),
+            ("Points ajoutés", _fmt(k["ajoute"]), f"marge : {_fmt(s['seuils']['marge_ajout'])}"),
+            ("Moral", f"{k['moral']} / 5" if k["moral"] else "—", "")])))
+    diapos.append(diapo("Synthèse — alertes", _alertes(s["alertes"]) if s["alertes"] else texte(["Aucun déclencheur atteint."])))
+    return diapos
 
+
+def v_seance(instance_id=None, aujourdhui=None):
+    import pilote
+    if instance_id is None:
+        candidates = [i for i in db.lister("instance") if pilote.type_seance(i) != "melee"]
+        if not candidates:
+            return [diapo("Préparation de séance", texte(["Aucune instance à préparer."]))]
+        instance_id = candidates[0]["id"]
+    s = pilote.preparer_seance(instance_id, aujourdhui)
+    quand = (f"{fr(s['date'])}" + (f" à {s['instance']['heure']}" if s["instance"].get("heure") else "")) if s["date"] else "date à fixer"
+    qui = ", ".join(p for p in s["participants"] + [s["autres_participants"]] if p) or "—"
+    ordre = tableau(["Durée", "Point"], [[f"{p['minutes']} min" if p["minutes"] else "", p["titre"]] for p in s["ordre_du_jour"]],
+                    None, [0.9, 6])
+    diapos = [diapo(f"{s['instance']['nom']} — ordre du jour", ordre,
+                    texte(["Messages clés :"] + ["• " + m for m in s["messages_cles"]]) if s["messages_cles"] else texte([]),
+                    sous=f"{s['type_libelle']} · {quand} · {s['duree']} min · {qui}")]
+    for p in s["ordre_du_jour"]:
+        if p["contenu"] and p["cle"] != "ouverture":
+            diapos.append(diapo(p["titre"], texte(["• " + c for c in p["contenu"]]), sous=f"{p['minutes']} min"))
+    return diapos
 
 def v_kpi():
     sprints = db.lister("sprint")
@@ -708,6 +739,7 @@ def construire(vue, meteo_id=None, aujourdhui=None):
         "meteo": lambda: v_meteo(meteo_id), "sprints": v_sprints,
         "chiffrage": v_chiffrage, "budget": lambda: v_budget(aujourdhui),
         "attentes": lambda: v_attentes(aujourdhui),
+        "seance": lambda: v_seance(meteo_id, aujourdhui),
     }
     return fonctions[vue]()
 

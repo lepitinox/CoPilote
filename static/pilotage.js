@@ -2,44 +2,54 @@
 // Vues de pilotage : synthèse, suivi des risques, décisions, météo ; et vues de saisie.
 const PILOTAGE = "Pilotage", SAISIE = "Saisie";
 
+const ETATS_REPONSE = { vert: "Vert", orange: "Orange", rouge: "Rouge", inconnu: "Non mesurable" };
 VUES.synthese = ["Synthèse", PILOTAGE, async v => {
   const s = await api("GET", "synthese"), k = s.kpi, a = s.atterrissage;
   v.append(titreVue("Synthèse — " + s.semaine,
-    "La trajectoire reste-t-elle crédible, qu'est-ce qui la menace, quelle décision faut-il faire prendre ? Tous les chiffres sont calculés à partir des données saisies."));
-  const bu = s.budget, at = s.attentes;
-  const tuilesEngagements = el("div", { class: "grille", style: "margin-top:12px" },
-    tuile("Atterrissage budgétaire", euros(bu.atterrissage), bu.reference == null ? "Aucun budget de référence"
-      : [pastille(bu.ecart < 0 ? "rouge" : "vert", (bu.ecart < 0 ? "Dépassement " : "Marge ") + euros(Math.abs(bu.ecart))), ` sur ${euros(bu.reference)}`]),
-    tuile("Budget consommé", pourcent(bu.taux_consomme), euros(bu.consomme)),
-    tuile("Attentes du client", nb(at.total), `${at.insatisfaites} insatisfaite(s) · ${at.a_recadrer} à recadrer`));
+    "Les trois questions d'un sponsor : tient-on le délai, le budget, le client est-il satisfait ? Puis les décisions à obtenir. Tous les chiffres sont calculés à partir des données saisies."));
+  v.append(el("div", { class: "reponses" }, [["delai", "Délai", "planning"], ["budget", "Budget", "budget"], ["client", "Client", "attentes"]].map(([c, t, vue]) => {
+    const r = s.reponses[c];
+    return el("div", { class: "carte reponse cliquable " + r.etat, tabindex: 0, title: "Ouvrir le détail", onclick: () => afficher(vue),
+      onkeydown: e => { if (e.key === "Enter") afficher(vue); } },
+      el("h3", {}, t, r.etat === "inconnu" ? pastille("neutre", ETATS_REPONSE.inconnu) : pastille(r.etat, ETATS_REPONSE[r.etat])),
+      el("div", {}, r.phrase), r.details.length ? el("ul", {}, r.details.map(x => el("li", {}, x))) : null);
+  })));
+  const enAttente = s.decisions_en_attente;
+  v.append(el("h3", {}, "Décisions à obtenir"), enAttente.length ? el("div", { class: "cadre-table" }, el("table", {},
+    el("thead", {}, el("tr", {}, ["Décision", "Décideur", "Échéance", "En attente depuis"].map(x => el("th", {}, x)))),
+    el("tbody", {}, enAttente.map(d => el("tr", { class: "cliquable", tabindex: 0, onclick: () => formulaire("decision", d, recharger) },
+      el("td", { class: "long" }, el("b", {}, d.titre)), el("td", {}, d.porteur || pastille("orange", "À désigner")),
+      el("td", {}, dateFr(d.echeance), d.en_retard ? [" ", pastille("rouge", "En retard")] : null),
+      el("td", { class: "num" }, d.age_jours == null ? "—" : d.age_jours + " j"))))))
+    : el("div", { class: "vide" }, "Aucune décision en attente."));
+  if (s.tendances.length) v.append(el("h3", {}, "Tendance des dernières semaines"), el("div", { class: "frise" },
+    s.tendances.map(x => el("span", { title: `${x.semaine} (météo du ${dateFr(x.date)})` }, tendance(x.tendance))),
+    el("span", { style: "color:var(--doux);font-size:13px;margin-left:6px" }, "→ aujourd'hui :"), tendance(s.tendance)));
+  v.append(el("h3", {}, "Livraison"));
   if (!k) {
-    v.append(el("div", { class: "grille" }, tuile("Tendance calculée", tendance(s.tendance), `${s.alertes.length} alerte(s) active(s)`)),
-      tuilesEngagements, el("p", { class: "aide", style: "margin-top:12px" }, "Aucun sprint saisi : les indicateurs de livraison ne sont pas calculés."));
+    v.append(el("p", { class: "aide" }, "Aucun sprint saisi : la livraison se lit sur les jalons (vue Macro-planning)."));
   } else {
-  let fin = "Non calculable", note = "Le backlog ne se vide pas assez vite";
-  if (a.atteignable) {
-    fin = dateFr(a.date_fin_estimee);
-    note = a.ecart_sprints == null ? "Pas de date cible" : a.ecart_sprints === 0 ? "Dans la cible du " + dateFr(a.date_cible)
-      : `+${a.ecart_sprints} sprints après la cible du ${dateFr(a.date_cible)}`;
+    let fin = "Non calculable", note = "Le backlog ne se vide pas assez vite";
+    if (a.atteignable) {
+      fin = dateFr(a.date_fin_estimee);
+      note = a.ecart_sprints == null ? "Pas de date cible" : a.ecart_sprints === 0 ? "Dans la cible du " + dateFr(a.date_cible)
+        : `+${a.ecart_sprints} sprints après la cible du ${dateFr(a.date_cible)}`;
+    }
+    v.append(el("div", { class: "grille" },
+      tuile("Fin estimée", fin, note),
+      tuile(`Sprint ${k.sprint} : réalisé / prévu`, `${nb(k.realise)} / ${nb(k.prevu)}`, pct(k.taux_realisation)),
+      tuile("Reste à faire", nb(k.reste) + " pts", `Consommation nette : ${nb(a.consommation_nette)} pts par sprint`),
+      tuile("Points ajoutés", nb(k.ajoute), `Moyenne : ${nb(k.ajout_moyen)} · marge : ${nb(s.seuils.marge_ajout)}`),
+      tuile("Moral", k.moral ? k.moral + " / 5" : "—", `Anomalies : ${k.anomalies_creees} créées, ${k.anomalies_corrigees} corrigées`)));
   }
-  v.append(el("div", { class: "grille" },
-    tuile("Tendance calculée", tendance(s.tendance), `${s.alertes.length} alerte(s) active(s)`),
-    tuile("Fin estimée", fin, note),
-    tuile(`Sprint ${k.sprint} : réalisé / prévu`, `${nb(k.realise)} / ${nb(k.prevu)}`, pct(k.taux_realisation)),
-    tuile("Reste à faire", nb(k.reste) + " pts", `Consommation nette : ${nb(a.consommation_nette)} pts par sprint`),
-    tuile("Points ajoutés", nb(k.ajoute), `Moyenne : ${nb(k.ajout_moyen)} · marge : ${nb(s.seuils.marge_ajout)}`),
-    tuile("Moral", k.moral ? k.moral + " / 5" : "—", `Anomalies : ${k.anomalies_creees} créées, ${k.anomalies_corrigees} corrigées`)), tuilesEngagements);
-  }
-  v.append(el("h3", {}, "Alertes"));
+  v.append(el("h3", {}, `Alertes (${s.alertes.length})`, " ", tendance(s.tendance)));
   v.append(s.alertes.length ? el("div", { class: "liste" }, s.alertes.map(x => el("div", { class: "item" },
     el("div", { class: "tete" }, pastille(x.niveau >= 3 ? "rouge" : "orange", x.niveau >= 3 ? "Niveau 3 — sponsor" : "Niveau 2 — projet"),
       el("span", { class: "titre" }, x.titre)),
     el("div", { class: "detail" }, x.detail))))
     : el("div", { class: "vide" }, "Aucun déclencheur atteint."));
-  v.append(el("h3", {}, "À traiter"), el("div", { class: "grille" },
-    tuile("Propositions à valider", nb(s.propositions_en_attente), "Vue Comptes rendus"),
-    tuile("Risques et adhérences ouverts", nb(s.risques_ouverts)),
-    tuile("Décisions à prendre", nb(s.decisions_a_prendre))));
+  v.append(el("p", { class: "aide", style: "margin-top:12px" }, "Ce que vous avez à faire : ",
+    el("button", { class: "lien", onclick: () => afficher("aujourdhui") }, "ouvrir la page À traiter"), "."));
 }];
 
 // ---------- Suivi des risques : risque, état, évolution depuis la dernière session ----------

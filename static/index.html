@@ -170,6 +170,17 @@ textarea { min-height: 84px; resize: vertical; }
   white-space: nowrap; font-size: 12.5px; border: 0; background: none; padding: 0; }
 .plan .jalon i { width: 14px; height: 14px; background: var(--texte); transform: rotate(45deg); flex: none; margin: 4px 2px; }
 .plan .jalon.atteint i { background: var(--vert); }
+.plan .jalon .report { color: var(--orange); font-weight: 600; }
+.plan .reference { position: absolute; top: 9px; width: 10px; height: 10px; transform: translateX(-5px) rotate(45deg);
+  border: 2px solid var(--doux); background: var(--carte); pointer-events: none; }
+.reponses { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.reponse { border-left: 4px solid var(--trait); }
+.reponse.vert { border-left-color: var(--vert); background: var(--carte); color: var(--texte); }
+.reponse.orange { border-left-color: var(--orange); background: var(--carte); color: var(--texte); }
+.reponse.rouge { border-left-color: var(--rouge); background: var(--carte); color: var(--texte); }
+.reponse h3 { margin: 0 0 6px; display: flex; gap: 8px; align-items: center; }
+.reponse ul { margin: 8px 0 0; padding-left: 18px; color: var(--doux); font-size: 13.5px; }
+.frise { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
 .plan .jalon.gauche { flex-direction: row-reverse; transform: translateX(calc(-100% + 9px)); }
 .plan .hors { position: absolute; top: 7px; font-size: 12.5px; white-space: nowrap; }
 .plan .grille-mois, .plan .aujourdhui { position: absolute; top: 0; bottom: 0; pointer-events: none; }
@@ -266,6 +277,7 @@ textarea { min-height: 84px; resize: vertical; }
 <script src="/static/pilotage.js"></script>
 <script src="/static/graphes.js"></script>
 <script src="/static/finances.js"></script>
+<script src="/static/pilote.js"></script>
 <script>demarrer();</script>
 </body>
 </html>
