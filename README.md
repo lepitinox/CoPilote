@@ -19,7 +19,7 @@ corbeille une mission ; « Charger la démo » y ouvre une mission fictive, dans
 `demo`.
 Le serveur n'écoute que sur la machine locale.
 
-`python-pptx` et `openpyxl` servent aux exports ; `anthropic` aux fonctions LLM. Sans clé
+`python-pptx` et `openpyxl` servent aux exports ; `anthropic` aux fonctions LLM ; `mcp` au serveur MCP. Sans clé
 d'API, tout fonctionne sauf la rédaction par le modèle : la météo est alors générée au format
 factuel, et l'extraction des comptes rendus est indisponible.
 
@@ -35,6 +35,43 @@ factuel, et l'extraction des comptes rendus est indisponible.
 - **Les modèles d'export** : le dossier `modeles/` (autre emplacement avec `COPILOTE_MODELES`).
 
 Les deux sont exclus du dépôt Git : ils contiennent des données de mission.
+
+## Serveur MCP : piloter avec Claude
+
+`mcp_server.py` expose le co-pilote à un LLM par le protocole MCP : Claude (ou tout client
+MCP) lit les missions et les met à jour avec les mêmes règles que l'interface. Il travaille
+sur les mêmes fichiers que le serveur web ; les deux peuvent tourner en même temps.
+
+**Claude Code** (à lancer une fois, chemin absolu vers ce dossier) :
+
+```bash
+claude mcp add copilote -- python <chemin>/copilote/mcp_server.py
+```
+
+**Claude Desktop** (`claude_desktop_config.json`) :
+
+```json
+{ "mcpServers": { "copilote": { "command": "python", "args": ["<chemin>/copilote/mcp_server.py"] } } }
+```
+
+**Autres clients** : `python mcp_server.py --http` sert en Streamable HTTP sur
+`http://127.0.0.1:8766/mcp` (port : `--port` ou `COPILOTE_MCP_PORT`), sur la machine locale seulement.
+
+Ce que l'assistant peut faire :
+
+- **Lire** (outils marqués en lecture seule) : `lister_missions`, `decrire_modele`, `fiche_mission`,
+  `synthese`, `lister_elements` (avec recherche), `lire_element`, `suivi_risques`, `chiffrage`,
+  `budget`, `attentes_client`, `gouvernance`, `historique`, `exporter_mission`.
+- **Écrire** : `creer_element`, `modifier_element`, `supprimer_element`, `modifier_fiche_mission`,
+  `annuler_modification`, `proposer_creneaux`, `creer_mission`.
+- **Prompts prêts à l'emploi** : `revue_hebdomadaire`, `integrer_compte_rendu`, `preparer_comite`.
+- **Ressources** : `copilote://missions`, `copilote://modele`, `copilote://mission/{cle}/synthese`.
+
+Chaque outil prend un paramètre `mission` (clé) ; à défaut, la dernière mission ouverte. Les
+chiffres viennent des calculs du co-pilote, jamais du modèle. Chaque écriture est inscrite à
+l'historique avec l'origine « assistant (MCP) » : elle se relit et s'annule dans la vue
+Historique. Attention : les données de la mission sont alors transmises au modèle utilisé par
+le client MCP (même réserve que pour les fonctions LLM ci-dessous).
 
 ## Activer les fonctions LLM
 
@@ -144,6 +181,7 @@ modèle par défaut.
 | `meteo.py` | Assemblage de la météo hebdomadaire |
 | `agenda.py` | Créneaux des réunions, calendrier type d'un sprint, invitations `.ics` |
 | `exports.py` | Description neutre de chaque vue et rendu PowerPoint / Excel avec modèles |
+| `mcp_server.py` | Serveur MCP : outils, ressources et prompts pour un LLM |
 | `llm.py` | Les trois fonctions LLM (extraire, rédiger, challenger) ; seul point d'accès au modèle |
 | `demo.py`, `demo_cadre.py` | Mission de démonstration fictive |
 | `static/index.html` | Page et styles |
@@ -152,7 +190,7 @@ modèle par défaut.
 | `static/pilotage.js` | Vues de pilotage : synthèse, suivi des risques, décisions, météo, saisies |
 | `static/graphes.js` | Indicateurs en graphiques |
 | `static/finances.js` | Chiffrage, budget, attentes du client |
-| `tests/` | `test_calculs.py`, `test_agenda_exports.py`, `test_missions.py`, `test_finances.py` (chacun : `python tests/<fichier>`) |
+| `tests/` | `test_calculs.py`, `test_agenda_exports.py`, `test_missions.py`, `test_finances.py`, `test_mcp.py` (chacun : `python tests/<fichier>`) |
 
 ## Principes tenus par le code
 

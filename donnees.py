@@ -8,6 +8,45 @@ import finances
 import meteo
 
 
+# Éléments que l'interface et l'assistant (MCP) peuvent créer, modifier et supprimer.
+EDITABLES = {"jalon", "livrable", "sprint", "risque", "decision", "compte_rendu",
+             "lot", "lot_element", "story", "activite", "acteur", "instance", "raci", "metier",
+             "estimation", "profil", "consommation", "depense", "facture", "attente"}
+CHAMPS_JSON_MISSION = ("seuils", "raci_roles", "chiffrage")
+
+
+def creer_element(table, corps, aujourdhui=None):
+    """Création avec les règles de datage : un risque ou une décision porte sa date de création."""
+    auj = (aujourdhui or dt.date.today()).isoformat()
+    corps = dict(corps or {})
+    if table in ("risque", "decision"):
+        corps["cree_le"] = auj
+    if table == "risque" and not corps.get("maj_le"):
+        corps["maj_le"] = auj
+    return db.creer(table, corps)
+
+
+def modifier_element(table, ident, corps, aujourdhui=None):
+    """Modification ; None si l'élément n'existe pas."""
+    existant = db.lire(table, ident)
+    if not existant:
+        return None
+    corps = dict(corps or {})
+    # Toute modification d'un risque le date du jour, sauf date saisie à la main.
+    if table == "risque" and corps.get("maj_le") in (None, "", existant.get("maj_le")):
+        corps["maj_le"] = (aujourdhui or dt.date.today()).isoformat()
+    return db.modifier(table, ident, corps)
+
+
+def modifier_fiche(corps):
+    corps = dict(corps or {})
+    for cle in CHAMPS_JSON_MISSION:
+        if isinstance(corps.get(cle), (dict, list)):
+            corps[cle] = json.dumps(corps[cle], ensure_ascii=False)
+    db.modifier("mission", 1, corps)
+    return db.mission()
+
+
 def etat_mission():
     return (db.mission(), db.lister("jalon"), db.lister("livrable"), db.lister("sprint"),
             db.lister("risque"), db.lister("decision"))

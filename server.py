@@ -23,9 +23,7 @@ PORT = int(os.environ.get("COPILOTE_PORT", "8765"))
 STATIQUE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 PAGE = os.path.join(STATIQUE, "index.html")
 TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8"}
-EDITABLES = {"jalon", "livrable", "sprint", "risque", "decision", "compte_rendu",
-             "lot", "lot_element", "story", "activite", "acteur", "instance", "raci", "metier",
-             "estimation", "profil", "consommation", "depense", "facture", "attente"}
+EDITABLES = donnees.EDITABLES
 LISIBLES = EDITABLES | {"proposition", "meteo"}
 TENDANCES = ("vert", "orange", "rouge")
 TAILLE_MAX_IMPORT = 50 * 1024 * 1024
@@ -410,31 +408,17 @@ class Requete(BaseHTTPRequestHandler):
                 with db.origine("créneaux proposés"):
                     return agenda.proposer(bool(self._corps().get("tout")), aujourdhui())
             if nom in EDITABLES and not ident:
-                corps = self._corps()
-                if nom in ("risque", "decision"):
-                    corps["cree_le"] = aujourdhui().isoformat()
-                if nom == "risque" and not corps.get("maj_le"):
-                    corps["maj_le"] = aujourdhui().isoformat()
-                return db.creer(nom, corps)
+                return donnees.creer_element(nom, self._corps(), aujourdhui())
         if methode == "PUT":
             if nom == "mission" and not ident:
-                corps = self._corps()
-                for cle in ("seuils", "raci_roles", "chiffrage"):
-                    if isinstance(corps.get(cle), (dict, list)):
-                        corps[cle] = json.dumps(corps[cle], ensure_ascii=False)
-                db.modifier("mission", 1, corps)
-                return db.mission()
+                return donnees.modifier_fiche(self._corps())
             if nom == "meteo" and ident and not action:
                 return modifier_meteo(ident, self._corps())
             if nom in EDITABLES and ident and not action:
-                existant = db.lire(nom, ident)
-                if not existant:
+                resultat = donnees.modifier_element(nom, ident, self._corps(), aujourdhui())
+                if resultat is None:
                     raise Erreur("Élément introuvable.", 404)
-                corps = self._corps()
-                # Toute modification d'un risque le date du jour, sauf date saisie à la main.
-                if nom == "risque" and corps.get("maj_le") in (None, "", existant.get("maj_le")):
-                    corps["maj_le"] = aujourdhui().isoformat()
-                return db.modifier(nom, ident, corps)
+                return resultat
         if methode == "DELETE" and ident and not action and nom in EDITABLES | {"meteo"}:
             db.supprimer(nom, ident)
             return {"ok": True}

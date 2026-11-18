@@ -1,3 +1,4 @@
 anthropic
 python-pptx
 openpyxl
+mcp>=2.3
