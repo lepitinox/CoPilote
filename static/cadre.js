@@ -236,7 +236,9 @@ VUES.gouvernance = ["Gouvernance", CADRE, async v => {
         return el("tr", { class: "cliquable", tabindex: 0, title: "Modifier",
           onclick: () => formulaire("instance", i, recharger), onkeydown: e => { if (e.key === "Enter") formulaire("instance", i, recharger); } },
           el("td", { style: "font-weight:600;min-width:140px" }, i.nom, el("div", { style: "font-weight:400;color:var(--doux);font-size:12.5px" }, i.frequence || "")),
-          el("td", {}, el("ul", { style: "margin:0;padding-left:18px" }, (i.objectifs || "").split("\n").filter(Boolean).map(o => el("li", {}, o)))),
+          el("td", { title: (i.objectifs || "").split("\n").filter(Boolean).join(" · "), style: "max-width:300px" },
+            (() => { const o = (i.objectifs || "").split("\n").filter(Boolean);
+              return o.length ? [o[0], o.length > 1 ? el("span", { style: "color:var(--doux)" }, ` (+${o.length - 1})`) : null] : "—"; })()),
           el("td", { style: "min-width:200px;max-width:320px" },
             personnes.map(p => el("span", { class: "chip", title: [p.role, p.metier, p.email].filter(Boolean).join(" · ") }, p.nom)),
             i.participants && el("div", { style: "color:var(--doux);font-size:12.5px" }, i.participants),
@@ -252,7 +254,7 @@ VUES.gouvernance = ["Gouvernance", CADRE, async v => {
       })])))));
 
   const auj = new Date(); auj.setHours(0, 0, 0, 0);
-  v.append(el("h3", {}, `Calendrier type du sprint — du ${dateFr(ag.debut)} au ${dateFr(ag.fin)}`),
+  v.append(el("details", { class: "section" }, el("summary", {}, `Calendrier type du sprint — du ${dateFr(ag.debut)} au ${dateFr(ag.fin)}`),
     el("div", { class: "defile" }, el("div", { class: "agenda" }, ag.jours.map(j => el("div", { class: "jour" + (jour(j.date) < auj ? " passe" : "") },
       el("h4", {}, `${j.jour} ${dateFr(j.date).replace(/ \d{4}$/, "")}`),
       j.seances.map(s => el("button", { class: "seance", title: "Modifier l'instance",
@@ -260,7 +262,7 @@ VUES.gouvernance = ["Gouvernance", CADRE, async v => {
         el("b", {}, `${s.debut} – ${s.fin}`), s.nom)))))),
     (ag.hors_sprint.length || ag.non_planifiees.length) ? el("p", { class: "aide", style: "margin-top:8px" },
       ag.hors_sprint.length ? "Hors de ce sprint : " + ag.hors_sprint.map(h => `${h.nom} le ${dateFr(h.date)} à ${h.heure}`).join(" ; ") + ". " : "",
-      ag.non_planifiees.length ? "Sans créneau : " + ag.non_planifiees.map(n => n.nom).join(", ") + "." : "") : null);
+      ag.non_planifiees.length ? "Sans créneau : " + ag.non_planifiees.map(n => n.nom).join(", ") + "." : "") : null));
 }];
 
 // ---------- 7. Rappel : déroulé d'un sprint et KPI à collecter ----------
@@ -407,8 +409,9 @@ VUES.mission = ["Fiche mission", CADRE, async v => {
       el("div", { class: "barre" }, el("button", { class: "principal pousse" }, "Enregistrer"))),
     section("Hypothèses", "hypothese", hyps, colonnesHypotheses, recharger),
     el("p", { class: "aide", style: "margin-top:6px" }, "Une hypothèse invalidée crée le risque correspondant dans le suivi des risques."),
-    section("Livrables de pilotage", "livrable", livrables, [
-      ["Chantier", l => l.chantier || "—"], ["Livrable", l => l.libelle],
-      ["Avancement", l => (l.avancement == null ? "—" : l.avancement + " %"), "num"],
-      ["Statut", l => l.statut || "—", "long"], ["Tendance", l => tendance(l.tendance)]], recharger));
+    el("details", { class: "section" }, el("summary", {}, `Livrables de pilotage (${livrables.length})`),
+      section("", "livrable", livrables, [
+        ["Chantier", l => l.chantier || "—"], ["Livrable", l => l.libelle],
+        ["Avancement", l => (l.avancement == null ? "—" : l.avancement + " %"), "num"],
+        ["Statut", l => l.statut || "—", "long"], ["Tendance", l => tendance(l.tendance)]], recharger)));
 }];

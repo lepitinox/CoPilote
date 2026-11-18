@@ -110,7 +110,7 @@ label.case { display: flex; align-items: center; gap: 8px; color: var(--texte); 
 label.case input { width: auto; }
 input, select, textarea { font: inherit; color: var(--texte); padding: 7px 9px;
   border: 1px solid var(--trait); border-radius: 6px; background: #fff; width: 100%; }
-textarea { min-height: 84px; resize: vertical; }
+textarea { min-height: 60px; resize: vertical; }
 .champs { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
 .champs .large { grid-column: 1 / -1; }
 @media (max-width: 560px) { .champs { grid-template-columns: 1fr; } }
@@ -219,7 +219,7 @@ textarea { min-height: 84px; resize: vertical; }
 .raci tr.domaine td { background: #fafbfc; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--doux); }
 
 /* graphiques */
-.graphes { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
+.graphes { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
 @media (max-width: 520px) { .graphes { grid-template-columns: 1fr; } }
 .graphe { position: relative; }
 .graphe h3 { margin: 0; }
@@ -240,7 +240,24 @@ textarea { min-height: 84px; resize: vertical; }
 .lettre { display: inline-flex; width: 24px; height: 24px; border-radius: 50%; align-items: center; justify-content: center;
   background: var(--texte); color: #fff; font-size: 12.5px; font-weight: 700; flex: none; }
 .evo { white-space: nowrap; font-weight: 600; }
-.exports { display: inline-flex; gap: 6px; padding-left: 8px; border-left: 1px solid var(--trait); }
+.exports { position: relative; }
+.exports > summary { list-style: none; cursor: pointer; border: 1px solid var(--trait); background: var(--carte); border-radius: 6px; padding: 6px 12px; }
+.exports > summary::-webkit-details-marker { display: none; }
+.exports > summary::after { content: " ▾"; color: var(--doux); }
+.exports .menu-deroulant { position: absolute; right: 0; top: calc(100% + 4px); z-index: 6; display: grid; gap: 4px; min-width: 190px;
+  background: var(--carte); border: 1px solid var(--trait); border-radius: 8px; padding: 6px; box-shadow: 0 6px 18px rgba(20, 28, 40, .12); }
+.exports .menu-deroulant button { text-align: left; border: 0; }
+.exports .menu-deroulant button:hover { background: var(--accent-fond); }
+.bouton-aide { width: 26px; height: 26px; padding: 0; border-radius: 50%; font-weight: 700; color: var(--doux); }
+.bouton-aide[aria-expanded="true"] { background: var(--accent-fond); color: var(--accent); border-color: var(--accent); }
+nav h2 .groupe { all: unset; cursor: pointer; font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit; }
+nav h2 .groupe:focus-visible { outline: 2px solid var(--accent); }
+nav h2 .groupe[aria-expanded="false"] span { display: inline-block; transform: rotate(-90deg); }
+.reponses.compactes { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; }
+.reponses.compactes .reponse { padding: 10px 12px; }
+.reponses.compactes .reponse h3 { font-size: 14px; margin-bottom: 2px; }
+.reponses.compactes .reponse div { font-size: 13.5px; color: var(--doux); }
+details.section > summary { cursor: pointer; font-weight: 600; font-size: 15px; margin: 20px 0 8px; }
 .personnes { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 2px 10px;
   max-height: 210px; overflow-y: auto; border: 1px solid var(--trait); border-radius: 6px; padding: 6px 8px; }
 .metiers { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }

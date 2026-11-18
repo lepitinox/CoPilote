@@ -108,16 +108,24 @@ du modèle validé (décision D3 de la note de cadrage).
 
 ## Vues
 
-Le menu est rangé par moment du pilotage :
+Le menu est rangé par moment du pilotage, en une douzaine d'entrées :
 
-- **Aujourd'hui** : À traiter (page d'accueil), Synthèse.
-- **Piloter** : suivi des risques, attentes du client, décisions et actions (avec leur
-  ancienneté), demandes de changement, macro-planning (reports et hypothèses du planning), indicateurs (avec, en bas de
-  page, le rappel du fonctionnement d'un sprint et des KPI à collecter), budget (analyse).
-- **Préparer et rendre compte** : gouvernance (préparation des séances), météo hebdomadaire.
-- **Cadrer** : fiche mission et hypothèses, feuille de route (vue d'ensemble ou détail pour
-  qui, comment, quoi ; état de chaque prérequis), story map, organisation, RACI, chiffrage.
-- **Saisir** : sprints, saisie du budget (temps consommés, dépenses), comptes rendus, historique.
+- **Aujourd'hui** : le **tableau de bord** (page d'accueil) — les trois réponses au sponsor
+  (délai, budget, client) en une ligne, la liste À traiter, puis la synthèse détaillée repliée
+  (décisions à obtenir, tendance, livraison, alertes).
+- **Piloter** : suivi des risques, attentes du client, décisions et actions, demandes de
+  changement, macro-planning, indicateurs (avec le rappel du sprint replié), budget.
+- **Préparer** : gouvernance (préparation des séances), météo hebdomadaire.
+- **Cadrer** : fiche mission et hypothèses, feuille de route (vue d'ensemble ou détail ; état
+  des prérequis), story map, organisation, RACI, chiffrage. Le groupe se replie de lui-même une
+  fois les étapes de démarrage posées.
+- **Saisir** : une page à onglets — sprints, temps et dépenses, comptes rendus, historique.
+
+Pour alléger les pages : l'aide de chaque page est dépliée à la première visite puis rangée
+derrière « ? » ; les exports PowerPoint, Excel et modèles sont regroupés dans « Exporter » ; les
+listes et tableaux longs montrent les premières lignes avec « Voir les autres » ; les sections
+de détail (matrice des risques, risques clos, calendrier type, livrables de pilotage) sont
+repliées ; la création de mission ne montre d'abord que le nom, le client et le point de départ.
 
 **À traiter** rassemble ce que la mission attend du pilote, classé en *maintenant* (actions et
 décisions en retard, risques critiques sans porteur ou plan, jalons dépassés, prérequis

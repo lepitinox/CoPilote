@@ -263,7 +263,7 @@ function formulaire(type, objet, apres, defauts = {}) {
 
 function tableau(type, lignes, colonnes, apres) {
   if (!lignes.length) return el("div", { class: "vide" }, "Aucun élément pour l'instant.");
-  return el("div", { class: "cadre-table" }, el("table", {},
+  return el("div", { class: "cadre-table" }, el("table", { "data-repliable": true },
     el("thead", {}, el("tr", {}, colonnes.map(c => el("th", {}, c[0])))),
     el("tbody", {}, lignes.map(l => el("tr", {
       class: "cliquable", tabindex: 0, title: "Modifier",
@@ -276,10 +276,21 @@ function section(titre, type, lignes, colonnes, apres) {
     el("button", { class: "pousse", onclick: () => formulaire(type, null, apres) }, "Ajouter")),
     tableau(type, lignes, colonnes, apres));
 }
-const titreVue = (titre, aide, ...actions) => [
-  el("div", { class: "barre", style: "margin-top:0" }, el("h2", { style: "margin:0;font-size:20px" }, titre),
-    el("span", { class: "pousse" }), actions, boutonsExport(etat.exportVue || etat.vue)),
-  el("p", { class: "aide" }, aide)];
+// Aide d'une page : dépliée la première fois, puis repliée derrière « ? » (mémorisé par navigateur).
+const MEMO_AIDE = "copilote.aide.";
+function aideRepliable(cle, texte) {
+  let vue = false;
+  try { vue = localStorage.getItem(MEMO_AIDE + cle) === "vu"; localStorage.setItem(MEMO_AIDE + cle, "vu"); } catch (e) { /* sans stockage : aide visible */ }
+  const p = el("p", { class: "aide", hidden: vue }, texte);
+  const b = el("button", { class: "bouton-aide", title: "À quoi sert cette page", "aria-expanded": String(!vue),
+    onclick: () => { p.hidden = !p.hidden; b.setAttribute("aria-expanded", String(!p.hidden)); } }, "?");
+  return [b, p];
+}
+const titreVue = (titre, aide, ...actions) => {
+  const [b, p] = aideRepliable(etat.exportVue || etat.vue, aide);
+  return [el("div", { class: "barre", style: "margin-top:0" }, el("h2", { style: "margin:0;font-size:20px" }, titre), b,
+    el("span", { class: "pousse" }), actions, boutonsExport(etat.exportVue || etat.vue)), p];
+};
 
 // ---------- exports PowerPoint / Excel ----------
 async function telechargerFichier(url, bouton) {
@@ -297,10 +308,12 @@ function boutonsExport(vue) {
   const ex = ref.exports;
   if (!ex || !ex.libelles[vue]) return null;
   const extra = vue === "meteo" && etat.meteo ? "?meteo=" + etat.meteo : "";
-  return el("span", { class: "exports" },
-    el("button", { title: "Exporter cette vue en PowerPoint", onclick: e => telechargerFichier(`/api/export/${vue}.pptx${extra}`, e.target) }, "PowerPoint"),
-    !ex.sans_excel.includes(vue) && el("button", { title: "Exporter cette vue en Excel", onclick: e => telechargerFichier(`/api/export/${vue}.xlsx`, e.target) }, "Excel"),
-    el("button", { title: "Modèles d'export de cette vue", onclick: () => dialogueModeles(vue) }, "Modèles"));
+  const fermer = e => e.target.closest("details").removeAttribute("open");
+  return el("details", { class: "exports" }, el("summary", { title: "Exporter cette vue" }, "Exporter"),
+    el("div", { class: "menu-deroulant" },
+      el("button", { onclick: e => { fermer(e); telechargerFichier(`/api/export/${vue}.pptx${extra}`); } }, "PowerPoint"),
+      !ex.sans_excel.includes(vue) && el("button", { onclick: e => { fermer(e); telechargerFichier(`/api/export/${vue}.xlsx`); } }, "Excel"),
+      el("button", { onclick: e => { fermer(e); dialogueModeles(vue); } }, "Modèles d'export…")));
 }
 function dialogueModeles(vue) {
   const d = $("#dialogue"), ex = ref.exports;
@@ -349,19 +362,32 @@ const VUES = {};
 // Menu rangé par moment du pilotage : ce que je fais aujourd'hui, je pilote, je prépare et rends
 // compte, je cadre, je saisis.
 const MENU = [
-  ["Aujourd'hui", ["aujourdhui", "synthese"]],
+  ["Aujourd'hui", ["tableau"]],
   ["Piloter", ["risques", "attentes", "decisions", "changements", "planning", "kpi", "budget"]],
-  ["Préparer et rendre compte", ["gouvernance", "meteo"]],
+  ["Préparer", ["gouvernance", "meteo"]],
   ["Cadrer", ["mission", "route", "storymap", "organisation", "raci", "chiffrage"]],
-  ["Saisir", ["sprints", "budget_saisie", "cr", "historique"]],
+  ["Saisir", ["saisie"]],
 ];
+// Pages regroupées : leur ancienne adresse ouvre la page qui les contient.
+const ONGLETS_SAISIE = [["sprints", "Sprints"], ["budget_saisie", "Temps et dépenses"], ["cr", "Comptes rendus"], ["historique", "Historique"]];
+const ALIAS = { aujourdhui: "tableau", synthese: "tableau", sprints: "saisie", budget_saisie: "saisie", cr: "saisie", historique: "saisie" };
+const MEMO_MENU = "copilote.menu.";
+function replierGroupe(nom, replie) {
+  const g = document.querySelector(`#menu [data-groupe="${nom}"]`);
+  if (!g) return;
+  g.hidden = replie;
+  document.querySelector(`#menu [data-titre-groupe="${nom}"]`)?.setAttribute("aria-expanded", String(!replie));
+}
 const GROUPES = ["Aujourd'hui", "Cadre de la mission", "Pilotage", "Finances", "Saisie"];
 const ORDRE = ["aujourdhui", "route", "lotissement", "storymap", "planning", "organisation", "gouvernance", "sprintkpi", "raci",
   "mission", "synthese", "kpi", "risques", "attentes", "decisions", "meteo", "chiffrage", "budget", "sprints", "cr", "historique"];
-const etat = { vue: "aujourdhui", cr: null, meteo: null, edition: false, mission: null, missions: [] };
+const etat = { vue: "tableau", cr: null, meteo: null, edition: false, mission: null, missions: [] };
 
 async function afficher(nom) {
+  if (ALIAS[nom]) { if (ALIAS[nom] === "saisie") etat.ongletSaisie = nom; nom = ALIAS[nom]; }
   etat.vue = nom; etat.exportVue = null;
+  const groupe = MENU.find(([, cles]) => cles.includes(nom));
+  if (groupe) replierGroupe(groupe[0], false);
   try { history.replaceState(null, "", "#" + nom); } catch (e) { /* sans importance */ }
   for (const b of document.querySelectorAll("#menu button")) b.setAttribute("aria-current", b.dataset.vue === nom ? "page" : "false");
   const v = el("div", {});
@@ -374,12 +400,30 @@ async function afficher(nom) {
     }
     await VUES[nom][2](v);
   } catch (e) { v.append(el("div", { class: "vide" }, e.message)); }
+  replierLongues(v);
   if (etat.vue === nom) $("#vue").replaceChildren(v);
+}
+
+// ---------- 4. pages sur un écran : listes et tableaux longs repliés ----------
+const VISIBLES = 6;
+function replierLongues(v) {
+  const plier = (conteneur, elements, libelle) => {
+    if (elements.length <= VISIBLES + 2) return;
+    const caches = elements.slice(VISIBLES);
+    caches.forEach(x => (x.hidden = true));
+    const b = el("button", { class: "lien", style: "margin-top:6px;font-size:14px",
+      onclick: () => { caches.forEach(x => (x.hidden = false)); b.remove(); } }, `Voir les ${caches.length} autres ${libelle}`);
+    conteneur.after(b);
+  };
+  v.querySelectorAll(".liste").forEach(l => plier(l, [...l.children], "éléments"));
+  v.querySelectorAll("table[data-repliable] tbody").forEach(t => plier(t.closest(".cadre-table"), [...t.children], "lignes"));
 }
 const recharger = () => afficher(etat.vue);
 
 async function entete() {
-  const [m, e] = await Promise.all([api("GET", "mission"), api("GET", "etat")]);
+  const [m, e, dem] = await Promise.all([api("GET", "mission"), api("GET", "etat"), api("GET", "demarrage")]);
+  let choix = null; try { choix = localStorage.getItem(MEMO_MENU + "Cadrer"); } catch (err) { /* sans importance */ }
+  replierGroupe("Cadrer", choix ? choix === "replie" : dem.faites === dem.total);
   $("#nom-mission").textContent = [m.nom, m.client].filter(Boolean).join(" — ");
   const fiche = etat.missions.find(x => x.cle === etat.mission);
   if (fiche && (fiche.nom !== m.nom || fiche.client !== (m.client || ""))) {
@@ -463,13 +507,15 @@ async function dialogueNouvelleMission(modeleChoisi) {
     try {
       const r = await api("POST", "missions", { fiche, modele: genre === "modele" ? cle : null,
         source: genre === "mission" ? cle : null, reprendre });
-      await listerMissions(); d.close(); await ouvrirMission(r.cle, "aujourdhui");
+      await listerMissions(); d.close(); await ouvrirMission(r.cle, "tableau");
       dire("Mission créée : suivez les étapes de démarrage.");
     } catch (err) { dire(err.message, true); }
   } },
     el("h3", {}, "Nouvelle mission"),
     el("p", { class: "aide", style: "margin:0" }, "Le minimum pour démarrer ; le reste se complète ensuite, guidé par la liste « Démarrage de la mission » de la page À traiter."),
-    el("div", { class: "champs" }, lNom, lClient, lCible, lBudget, lObjB, lObjP, lPilote, lSprint),
+    el("div", { class: "champs" }, lNom, lClient),
+    el("details", {}, el("summary", { style: "cursor:pointer;color:var(--accent)" }, "Plus de champs : date cible, budget, objectifs, pilote, sprint"),
+      el("div", { class: "champs", style: "margin-top:10px" }, lCible, lBudget, lObjB, lObjP, lPilote, lSprint)),
     el("label", {}, "Point de départ", source), infoModele, el("div", { class: "champs" }, lDebut), zoneReprise,
     el("p", { class: "aide", style: "margin:0" }, "Un modèle apporte le cadre et un squelette (lots, jalons, hypothèses et risques types, premier chiffrage). Reprendre une mission n'apporte que son cadre (personnes, réunions, tarifs, responsabilités, paramètres), sans aucune donnée de suivi."),
     el("div", { class: "barre" }, el("span", { class: "pousse" }),
@@ -502,7 +548,7 @@ function dialogueMissions() {
     document.body.append(choix); choix.click(); setTimeout(() => choix.remove(), 60000);
   };
   const zoneModeles = el("div", {});
-  api("GET", "modeles_mission").then(modeles => zoneModeles.replaceChildren(
+  const remplirModeles = modeles => zoneModeles.replaceChildren(
     el("h3", { style: "margin:8px 0 4px" }, "Modèles de mission"),
     el("div", { class: "cadre-table" }, el("table", {}, el("tbody", {}, modeles.map(x => el("tr", {},
       el("td", {}, el("b", {}, x.nom), " ", pastille("neutre", x.origine), el("div", { style: "color:var(--doux);font-size:13px" }, resumeModele(x))),
@@ -511,7 +557,8 @@ function dialogueMissions() {
         x.origine === "personnel" && el("button", { type: "button", class: "danger", onclick: async () => {
           if (!confirm(`Supprimer le modèle « ${x.nom} » ? Les missions déjà créées ne sont pas touchées.`)) return;
           try { await api("DELETE", `modeles_mission/${x.cle}`); dire("Modèle supprimé."); dialogueMissions(); } catch (e) { dire(e.message, true); }
-        } }, "Supprimer")))))))).catch(() => null));
+        } }, "Supprimer"))))))));
+  api("GET", "modeles_mission").then(remplirModeles).catch(() => null);
   const lignes = etat.missions.map(m => el("tr", {},
     el("td", {}, el("b", {}, m.nom), m.client && el("div", { style: "color:var(--doux);font-size:13px" }, m.client),
       m.cle === etat.mission && pastille("vert", "ouverte")),
@@ -536,6 +583,7 @@ function dialogueMissions() {
     zoneModeles,
     el("div", { class: "barre" },
       el("button", { class: "principal" }, "Nouvelle mission…"),
+      el("button", { type: "button", title: "Toutes les modifications de la mission ouverte", onclick: () => { d.close(); afficher("historique"); } }, "Historique"),
       el("button", { type: "button", onclick: importer }, "Importer un fichier…"),
       el("button", { type: "button", title: "Mission fictive, dans sa propre mission « demo »", onclick: async e => {
         if (etat.missions.some(m => m.cle === "demo") && !confirm("Réinitialiser la mission de démonstration ?")) return;
@@ -574,8 +622,14 @@ async function demarrer() {
   const menu = $("#menu");
   menu.append = ajouter;
   for (const [g, cles] of MENU) {
-    menu.append(el("h2", {}, g), cles.filter(cle => VUES[cle]).map(cle =>
-      el("button", { "data-vue": cle, onclick: () => afficher(cle) }, VUES[cle][0])));
+    const titre = g === "Cadrer"
+      ? el("h2", {}, el("button", { class: "groupe", "data-titre-groupe": g, "aria-expanded": "true", title: "Replier ou déplier",
+        onclick: () => { const replie = !document.querySelector(`#menu [data-groupe="${g}"]`).hidden;
+          replierGroupe(g, replie); try { localStorage.setItem(MEMO_MENU + g, replie ? "replie" : "deplie"); } catch (e) { /* sans importance */ } } },
+        g, el("span", { "aria-hidden": "true" }, " ▾")))
+      : el("h2", {}, g);
+    menu.append(titre, el("div", { "data-groupe": g }, cles.filter(cle => VUES[cle]).map(cle =>
+      el("button", { "data-vue": cle, onclick: () => afficher(cle) }, VUES[cle][0]))));
   }
   $("#btn-missions").addEventListener("click", dialogueMissions);
   $("#btn-nouvelle").addEventListener("click", () => dialogueNouvelleMission());
@@ -590,6 +644,6 @@ async function demarrer() {
     etat.mission = etat.missions.some(m => m.cle === memo) ? memo : r.derniere;
     remplirChoixMission();
     await entete();
-    await afficher(VUES[depart] ? depart : "aujourdhui");
+    await afficher(VUES[depart] ? depart : "tableau");
   } catch (e) { dire(e.message, true); }
 }

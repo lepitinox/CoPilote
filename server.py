@@ -369,6 +369,8 @@ class Requete(BaseHTTPRequestHandler):
                 return suivi_risques()
             if nom == "suivi_changements":
                 return changements.suivi(aujourdhui())
+            if nom == "demarrage":
+                return pilote.demarrage()
             if nom == "a_traiter":
                 return {**pilote.a_traiter(aujourdhui()), "demarrage": pilote.demarrage()}
             if nom == "glissements":

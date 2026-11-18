@@ -18,10 +18,11 @@ VUES.aujourdhui = ["À traiter", AUJOURDHUI, async v => {
     v.append(el("details", { class: "carte", open: dem.faites < dem.total - 2, style: "margin-bottom:16px" },
       el("summary", { style: "cursor:pointer;font-weight:600" }, `Démarrage de la mission : ${dem.faites} / ${dem.total} étapes posées`),
       el("p", { class: "aide", style: "margin:8px 0" }, "Ce qu'il faut poser pour que le co-pilote puisse calculer le délai, le budget et la satisfaction du client, et vous alerter."),
-      el("div", { class: "liste" }, dem.etapes.map(e => el("div", { class: "item", style: e.fait ? "opacity:.6" : "" },
-        el("div", { class: "tete" }, pastille(e.fait ? "vert" : "neutre", e.fait ? "✓ fait" : "à faire"), el("span", { class: "titre" }, e.titre),
-          !e.fait && el("button", { style: "margin-left:auto", onclick: () => afficher(e.vue) }, "Y aller")),
-        !e.fait && el("div", { class: "detail" }, e.aide))))));
+      el("div", { class: "liste" }, dem.etapes.filter(e => !e.fait).map(e => el("div", { class: "item" },
+        el("div", { class: "tete" }, pastille("neutre", "à faire"), el("span", { class: "titre" }, e.titre),
+          el("button", { style: "margin-left:auto", onclick: () => afficher(e.vue) }, "Y aller")),
+        el("div", { class: "detail" }, e.aide)))),
+      el("p", { class: "aide", style: "margin:8px 0 0" }, "Déjà posé : " + dem.etapes.filter(e => e.fait).map(e => e.titre.split(" :")[0].toLowerCase()).join(", ") + ".")));
   }
   v.append(el("div", { class: "grille" }, Object.entries(GROUPES_A_TRAITER).map(([g, [lib]]) =>
     tuile(lib, nb(t.compte[g]), g === "maintenant" && t.compte[g] ? pastille("rouge", "à traiter en priorité") : ""))));
@@ -39,7 +40,7 @@ VUES.aujourdhui = ["À traiter", AUJOURDHUI, async v => {
   for (const [g, [lib, aide]] of Object.entries(GROUPES_A_TRAITER)) {
     const liste = t.items.filter(i => i.groupe === g);
     if (!liste.length) continue;
-    v.append(el("h3", {}, lib), el("p", { class: "aide", style: "margin:-4px 0 8px" }, aide), el("div", { class: "liste" }, liste.map(it =>
+    v.append(el("h3", {}, `${lib} (${liste.length})`), el("p", { class: "aide", style: "margin:-4px 0 8px" }, aide), el("div", { class: "liste" }, liste.map(it =>
       el("div", { class: "item cliquable", tabindex: 0, onclick: () => ouvrir(it), onkeydown: e => { if (e.key === "Enter") ouvrir(it); } },
         el("div", { class: "tete" }, pastille(g === "maintenant" ? "rouge" : g === "semaine" ? "orange" : "neutre", GENRES[it.genre] || it.genre),
           el("span", { class: "titre" }, it.titre),
@@ -112,3 +113,46 @@ const enHeure = m => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m 
       el("summary", { style: "cursor:pointer;font-weight:600" }, "Comment fonctionne un sprint et quels KPI collecter"), rappel));
   };
 }
+
+// ---------- Tableau de bord : les trois réponses, ce qui est à traiter, la synthèse repliée ----------
+VUES.tableau = ["Tableau de bord", AUJOURDHUI, async v => {
+  etat.exportVue = "synthese";
+  const s = await api("GET", "synthese");
+  v.append(titreVue("Tableau de bord — " + s.semaine,
+    "En haut, les trois réponses au sponsor ; dessous, ce que la mission attend de vous. Le détail de la synthèse (décisions à obtenir, tendance, livraison, alertes) se déplie en bas de page."));
+  v.append(el("div", { class: "reponses compactes" }, [["delai", "Délai", "planning"], ["budget", "Budget", "budget"], ["client", "Client", "attentes"]].map(([c, t, vue]) => {
+    const r = s.reponses[c];
+    return el("div", { class: "carte reponse cliquable " + r.etat, tabindex: 0, title: "Ouvrir le détail",
+      onclick: () => afficher(vue), onkeydown: e => { if (e.key === "Enter") afficher(vue); } },
+      el("h3", {}, t, r.etat === "inconnu" ? pastille("neutre", "Non mesurable") : pastille(r.etat, ETATS_REPONSE[r.etat])),
+      el("div", {}, r.phrase));
+  })));
+  const aTraiter = el("div", { style: "margin-top:12px" });
+  await VUES.aujourdhui[2](aTraiter);
+  [...aTraiter.children].slice(0, 2).forEach(x => x.remove());  // titre et aide de la page intégrée
+  aTraiter.querySelector(":scope > .grille")?.remove();  // les comptes sont dans les titres de groupe
+  aTraiter.querySelectorAll(":scope > p.aide").forEach(p => p.remove());
+  const surveiller = [...aTraiter.querySelectorAll(":scope > h3")].find(h => h.textContent.startsWith("À surveiller"));
+  if (surveiller) {
+    const liste = surveiller.nextElementSibling;
+    const repli = el("details", { class: "section" }, el("summary", {}, surveiller.textContent), liste);
+    surveiller.replaceWith(repli);
+  }
+  v.append(aTraiter);
+  const detail = el("div", {});
+  await VUES.synthese[2](detail);
+  detail.querySelector(".reponses")?.remove();
+  [...detail.children].slice(0, 2).forEach(x => x.remove());
+  v.append(el("details", { class: "section" },
+    el("summary", {}, `Synthèse détaillée : décisions à obtenir, tendance, livraison, ${s.alertes.length} alerte(s)`), detail));
+}];
+
+// ---------- Saisir : sprints, temps et dépenses, comptes rendus, historique, en onglets ----------
+VUES.saisie = ["Saisir", SAISIE, async v => {
+  const o = ONGLETS_SAISIE.some(([c]) => c === etat.ongletSaisie) ? etat.ongletSaisie : "sprints";
+  v.append(el("div", { class: "barre", role: "tablist", style: "margin-top:0" }, ONGLETS_SAISIE.map(([c, l]) =>
+    el("button", { role: "tab", "aria-selected": String(c === o), class: c === o ? "principal" : "",
+      onclick: () => { etat.ongletSaisie = c; recharger(); } }, l))));
+  etat.exportVue = o;
+  await VUES[o][2](v);
+}];

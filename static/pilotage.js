@@ -49,7 +49,7 @@ VUES.synthese = ["Synthèse", PILOTAGE, async v => {
     el("div", { class: "detail" }, x.detail))))
     : el("div", { class: "vide" }, "Aucun déclencheur atteint."));
   v.append(el("p", { class: "aide", style: "margin-top:12px" }, "Ce que vous avez à faire : ",
-    el("button", { class: "lien", onclick: () => afficher("aujourdhui") }, "ouvrir la page À traiter"), "."));
+    el("button", { class: "lien", onclick: () => afficher("tableau") }, "ouvrir le tableau de bord"), "."));
 }];
 
 // ---------- Suivi des risques : risque, état, évolution depuis la dernière session ----------
@@ -106,11 +106,11 @@ VUES.risques = ["Suivi des risques", PILOTAGE, async v => {
     el("div", {}), NIV.map(n => el("div", { class: "axe-x" }, "Probabilité " + n.toLowerCase())));
   const horsMatrice = ouverts.filter(r => !(r.probabilite >= 1 && r.probabilite <= 3 && r.impact >= 1 && r.impact <= 3));
   v.append(el("h3", {}, "Risques et adhérences ouverts"), table(ouverts.length ? ouverts : []),
-    el("h3", {}, "Matrice probabilité × impact"),
-    el("div", { class: "carte", style: "display:inline-block;max-width:100%" }, matrice,
-      horsMatrice.length ? el("div", { style: "color:var(--doux);font-size:13px;margin-top:8px" },
-        "Non positionnés (probabilité ou impact manquant) : " + horsMatrice.map(r => lettres.get(r.id)).join(", ")) : null),
-    clos.length ? [el("h3", {}, "Clos"), table(clos)] : null);
+    el("details", { class: "section" }, el("summary", {}, "Matrice probabilité × impact"),
+      el("div", { class: "carte", style: "display:inline-block;max-width:100%" }, matrice,
+        horsMatrice.length ? el("div", { style: "color:var(--doux);font-size:13px;margin-top:8px" },
+          "Non positionnés (probabilité ou impact manquant) : " + horsMatrice.map(r => lettres.get(r.id)).join(", ")) : null)),
+    clos.length ? el("details", { class: "section" }, el("summary", {}, `Risques clos (${clos.length})`), table(clos)) : null);
 }];
 
 VUES.decisions = ["Décisions et actions", PILOTAGE, async v => {
