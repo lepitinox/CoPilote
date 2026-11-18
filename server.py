@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import agenda  # noqa: E402
 import calculs  # noqa: E402
+import catalogue  # noqa: E402
 import db  # noqa: E402
 import demo  # noqa: E402
 import donnees  # noqa: E402
@@ -331,6 +332,8 @@ class Requete(BaseHTTPRequestHandler):
             if methode == "DELETE":
                 exports.supprimer_modele(cible, ext)
                 return exports.etat_modeles()
+        if chemin == "/api/catalogue" or chemin.startswith("/api/catalogue/"):
+            return self._catalogue(methode, chemin)
         if chemin == "/api/missions" or chemin.startswith("/api/missions/"):
             return self._missions(methode, chemin)
         m = re.fullmatch(r"/api/(\w+)(?:/(\d+))?(?:/(\w+))?", chemin)
@@ -422,6 +425,28 @@ class Requete(BaseHTTPRequestHandler):
         if methode == "DELETE" and ident and not action and nom in EDITABLES | {"meteo"}:
             db.supprimer(nom, ident)
             return {"ok": True}
+        raise Erreur("Opération non prise en charge.", 404)
+
+    def _catalogue(self, methode, chemin):
+        """Catalogue des blocs de chiffrage (commun aux missions) et application à la mission."""
+        reste = chemin[len("/api/catalogue"):].strip("/")
+        try:
+            if not reste and methode == "GET":
+                return catalogue.catalogue()
+            if reste == "appliquer" and methode == "POST":
+                c = self._corps()
+                with db.origine("bloc du catalogue"):
+                    return donnees.appliquer_bloc(c.get("bloc"), c.get("niveau"), c.get("mode") or "detaille",
+                                                  c.get("lot") or "", c.get("quantite") or 1, c.get("libelle") or None)
+            if methode == "POST" and not reste:
+                return catalogue.enregistrer(None, self._corps())
+            if methode == "PUT" and reste:
+                return catalogue.enregistrer(reste, self._corps())
+            if methode == "DELETE" and reste:
+                catalogue.retirer(reste)
+                return catalogue.catalogue()
+        except ValueError as e:
+            raise Erreur(str(e))
         raise Erreur("Opération non prise en charge.", 404)
 
     def _missions(self, methode, chemin):

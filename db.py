@@ -37,7 +37,7 @@ TABLES = {
     "estimation": {"mode": "TEXT", "lot": "TEXT", "libelle": "TEXT", "taille": "TEXT",
                    "confiance": "TEXT", "profil": "TEXT", "jours_bas": "REAL",
                    "jours_probable": "REAL", "jours_haut": "REAL", "hypothese": "TEXT",
-                   "rang": "INTEGER"},
+                   "rang": "INTEGER", "bloc": "TEXT", "niveau": "TEXT"},  # bloc du catalogue d'origine
     # Budget. Profils vendus (TJM de vente, coût journalier, reste à faire en jours).
     "profil": {"nom": "TEXT", "metier": "TEXT", "tjm": "REAL", "cout_journalier": "REAL",
                "raf_jours": "REAL", "rang": "INTEGER"},

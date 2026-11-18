@@ -14,6 +14,7 @@ VUES.chiffrage = ["Chiffrage", FINANCES, async v => {
   const m = c.modes[mode];
   v.append(titreVue("Chiffrage",
     "Deux modes qui coexistent : un chiffrage macro quand on sait peu de choses, puis un chiffrage détaillé après les ateliers. La comparaison par lot montre ce que la collecte a changé ; le mode retenu alimente le budget.",
+    el("button", { class: "principal", onclick: () => dialogueCatalogue(mode) }, "Catalogue de blocs"),
     el("button", { onclick: () => dialogueParametres(p, c.tjm_moyen) }, "Paramètres"),
     boutonAjout("estimation", "Ajouter un élément", { mode, confiance: mode === "macro" ? "moyenne" : "" })));
 
@@ -193,3 +194,122 @@ VUES.attentes = ["Attentes du client", PILOTAGE, async v => {
         ["Revue", l => [dateFr(l.revue_le), l.revue_due ? [" ", pastille("orange", "À revoir")] : null]]], recharger));
   }
 }];
+
+// ---------- Catalogue de blocs de chiffrage ----------
+const NIV_CLASSE = { rapide: "vert", moyen: "orange", long: "rouge" };
+const sansAccent = t => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+const lignesRoles = roles => Object.entries(roles || {}).map(([r, j]) => `${r} : ${String(j).replace(".", ",")}`).join("\n");
+function lireRoles(texte) {
+  const out = {};
+  for (const ligne of texte.split("\n").map(l => l.trim()).filter(Boolean)) {
+    const m = /^(.+?)\s*[:=]\s*([\d.,]+)\s*j?$/.exec(ligne);
+    if (!m) throw new Error(`Ligne illisible : « ${ligne} ». Format attendu : Rôle : jours`);
+    out[m[1].trim()] = Number(m[2].replace(",", "."));
+  }
+  return out;
+}
+
+async function dialogueCatalogue(mode) {
+  const d = $("#dialogue"), cat = await api("GET", "catalogue");
+  d.classList.add("large");
+  if (!d.dataset.nettoyage) {
+    d.dataset.nettoyage = "1";
+    d.addEventListener("close", () => { if (d.classList.contains("large")) { d.classList.remove("large"); recharger(); } });
+  }
+  const etatCat = dialogueCatalogue.etat || (dialogueCatalogue.etat = { recherche: "", famille: "", lot: "", quantite: 1 });
+  let ajoutes = 0;
+  const compteur = el("span", { class: "aide", style: "margin:0" });
+  const familles = [...new Set(cat.blocs.map(b => b.famille))];
+  const liste = el("div", { style: "display:grid;gap:8px;max-height:56vh;overflow-y:auto;padding-right:4px" });
+  const ajouter = async (b, n, bouton) => {
+    await pendant(bouton, "…", async () => {
+      const crees = await api("POST", "catalogue/appliquer", { bloc: b.id, niveau: n, mode, lot: etatCat.lot, quantite: Number(etatCat.quantite) || 1 });
+      ajoutes += crees.length;
+      compteur.textContent = `${ajoutes} ligne(s) ajoutée(s) au chiffrage ${MODES[mode][0].toLowerCase()}.`;
+      dire(`« ${b.nom} » ajouté (${cat.niveaux[n].libelle.toLowerCase()}).`);
+    });
+  };
+  const dessiner = () => {
+    const r = sansAccent(etatCat.recherche), q = Number(etatCat.quantite) || 1;
+    const blocs = cat.blocs.filter(b => (!etatCat.famille || b.famille === etatCat.famille)
+      && (!r || sansAccent(`${b.id} ${b.nom} ${b.famille} ${b.description}`).includes(r)));
+    const parFamille = familles.map(f => [f, blocs.filter(b => b.famille === f)]).filter(([, l]) => l.length);
+    liste.replaceChildren(parFamille.length ? parFamille.map(([f, l]) => [
+      el("h4", { style: "margin:8px 0 0;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--doux)" }, f),
+      l.map(b => el("div", { class: "item" },
+        el("div", { class: "tete" }, el("span", { class: "titre" }, b.nom),
+          el("span", { style: "color:var(--doux);font-size:13px" }, b.unite),
+          b.origine === "personnalisé" && pastille("neutre", "personnalisé"),
+          el("button", { type: "button", class: "lien", style: "margin-left:auto;font-size:13px", onclick: () => editeurBloc(b, cat, mode) }, "Personnaliser")),
+        el("div", { class: "detail", style: "font-size:13.5px" }, b.description),
+        el("div", { class: "niveaux-bloc" }, Object.entries(cat.niveaux).map(([n, def]) => el("div", { class: "niveau-bloc" },
+          el("button", { type: "button", title: "Ajouter ce niveau au chiffrage", onclick: e => ajouter(b, n, e.currentTarget) },
+            pastille(NIV_CLASSE[n], def.duree), ` ${def.libelle} · ${jours(b.totaux[n] * q)}`),
+          b.criteres[n] && el("p", {}, b.criteres[n]),
+          el("small", {}, Object.entries(b.niveaux[n]).map(([r, j]) => `${r} ${jours(j * q)}`).join(" · ")))))))])
+      : el("div", { class: "vide" }, "Aucun bloc ne correspond."));
+  };
+  const recherche = el("input", { type: "search", placeholder: "Rechercher (données, API, recette…)", "aria-label": "Rechercher un bloc", oninput: e => { etatCat.recherche = e.target.value; dessiner(); } });
+  recherche.value = etatCat.recherche;
+  const famille = el("select", { "aria-label": "Famille", onchange: e => { etatCat.famille = e.target.value; dessiner(); } },
+    el("option", { value: "" }, "Toutes les familles"), familles.map(f => el("option", { value: f, selected: f === etatCat.famille }, f)));
+  const lot = el("select", { onchange: e => { etatCat.lot = e.target.value; } },
+    el("option", { value: "" }, "Sans lot"), nomsLots().map(n => el("option", { value: n, selected: n === etatCat.lot }, n)));
+  const quantite = el("input", { type: "number", min: "0.5", step: "0.5", oninput: e => { etatCat.quantite = e.target.value; dessiner(); } });
+  quantite.value = etatCat.quantite;
+  d.replaceChildren(el("form", { method: "dialog", onsubmit: e => { e.preventDefault(); d.close(); } },
+    el("h3", {}, `Catalogue de blocs — chiffrage ${MODES[mode][0].toLowerCase()}`),
+    el("p", { class: "aide", style: "margin:0" },
+      "Chaque bloc a trois niveaux : simple et clair (rapide), compliqué mais chemin clair (moyen), aucune information (long). "
+      + (mode === "detaille" ? "En détaillé, une ligne par rôle, rapprochée de vos profils par nom puis par métier." : "En macro, une ligne par bloc avec la fourchette du niveau.")
+      + " Les charges sont un point de départ : personnalisez-les pour votre contexte."),
+    el("div", { class: "champs", style: "grid-template-columns:2fr 1.4fr 1fr .8fr;align-items:end" }, recherche, famille,
+      el("label", {}, "Lot", lot), el("label", {}, "Quantité", quantite)),
+    liste,
+    el("div", { class: "barre" }, compteur, el("span", { class: "pousse" }),
+      el("button", { type: "button", onclick: () => editeurBloc(null, cat, mode) }, "Nouveau bloc"),
+      el("button", { class: "principal" }, "Terminer"))));
+  dessiner();
+  if (!d.open) d.showModal();
+}
+
+function editeurBloc(b, cat, mode) {
+  const d = $("#dialogue");
+  const nom = el("input", { required: true }), famille = el("input"), unite = el("input"), description = el("textarea");
+  nom.value = b?.nom || ""; famille.value = b?.famille || "Mes blocs"; unite.value = b?.unite || ""; description.value = b?.description || "";
+  const zones = Object.fromEntries(Object.keys(cat.niveaux).map(n => {
+    const t = el("textarea", { style: "min-height:110px;font-family:Consolas,monospace;font-size:13px" });
+    t.value = lignesRoles(b?.niveaux[n]); return [n, t];
+  }));
+  const quand = Object.fromEntries(Object.keys(cat.niveaux).map(n => {
+    const t = el("textarea", { style: "min-height:120px;font-size:13.5px", placeholder: "Dans quelle situation choisir ce niveau, ce que couvre la charge" });
+    t.value = b?.criteres?.[n] || ""; return [n, t];
+  }));
+  const retour = () => dialogueCatalogue(mode);
+  d.replaceChildren(el("form", { method: "dialog", onsubmit: async e => {
+    e.preventDefault();
+    try {
+      const corps = { nom: nom.value, famille: famille.value, unite: unite.value, description: description.value,
+        niveaux: Object.fromEntries(Object.entries(zones).map(([n, t]) => [n, lireRoles(t.value)])),
+        criteres: Object.fromEntries(Object.entries(quand).map(([n, t]) => [n, t.value])) };
+      await api(b ? "PUT" : "POST", b ? `catalogue/${b.id}` : "catalogue", corps);
+      dire("Bloc enregistré dans le catalogue (commun à toutes les missions)."); await retour();
+    } catch (err) { dire(err.message, true); }
+  } },
+    el("h3", {}, b ? "Personnaliser : " + b.nom : "Nouveau bloc"),
+    el("div", { class: "champs" }, el("label", { class: "large" }, "Nom", nom), el("label", {}, "Famille", famille),
+      el("label", {}, "Unité (par source, par écran…)", unite), el("label", { class: "large" }, "Ce que couvre le bloc", description)),
+    el("p", { class: "aide", style: "margin:0" }, `Une ligne par rôle : « Rôle : jours ». Rôles types : ${cat.roles.join(", ")} (ou le nom d'un de vos profils).`),
+    el("div", { class: "champs", style: "grid-template-columns:repeat(3,1fr)" }, Object.entries(cat.niveaux).map(([n, def]) =>
+      el("label", {}, [pastille(NIV_CLASSE[n], def.duree), " ", def.libelle], el("span", {}, "Quand le choisir"), quand[n],
+        el("span", {}, "Jours par rôle"), zones[n]))),
+    el("div", { class: "barre" },
+      b?.origine === "personnalisé" && el("button", { type: "button", class: "danger", onclick: async () => {
+        if (!confirm("Retirer la personnalisation de ce bloc ? Un bloc du catalogue d'origine retrouve ses valeurs ; un bloc créé par vous disparaît.")) return;
+        try { await api("DELETE", `catalogue/${b.id}`); dire("Personnalisation retirée."); await retour(); } catch (err) { dire(err.message, true); }
+      } }, "Retirer la personnalisation"),
+      el("span", { class: "pousse" }),
+      el("button", { type: "button", onclick: retour }, "Retour"),
+      el("button", { class: "principal" }, "Enregistrer"))));
+  if (!d.open) d.showModal();
+}

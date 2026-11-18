@@ -95,6 +95,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .menu button[aria-current="true"] { border-color: var(--accent); background: var(--accent-fond); }
 .menu small { display: block; color: var(--doux); }
 dialog { border: 1px solid var(--trait); border-radius: 10px; padding: 0; width: min(640px, 94vw); }
+dialog.large { width: min(1100px, 96vw); }
+.niveaux-bloc { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+@media (max-width: 760px) { .niveaux-bloc { grid-template-columns: 1fr; } }
+.niveau-bloc { display: flex; flex-direction: column; gap: 6px; }
+.niveau-bloc button { text-align: left; }
+.niveau-bloc p { margin: 0; font-size: 13px; line-height: 1.45; color: var(--texte); }
+.niveau-bloc small { color: var(--doux); font-size: 12px; }
 dialog::backdrop { background: rgba(20, 28, 40, .4); }
 dialog form { padding: 20px; display: grid; gap: 12px; }
 dialog h3 { margin: 0; font-size: 17px; }

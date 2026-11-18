@@ -3,6 +3,7 @@ import datetime as dt
 import json
 
 import calculs
+import catalogue
 import db
 import finances
 import meteo
@@ -36,6 +37,16 @@ def modifier_element(table, ident, corps, aujourdhui=None):
     if table == "risque" and corps.get("maj_le") in (None, "", existant.get("maj_le")):
         corps["maj_le"] = (aujourdhui or dt.date.today()).isoformat()
     return db.modifier(table, ident, corps)
+
+
+def appliquer_bloc(ident, niveau, mode="detaille", lot="", quantite=1, libelle=None):
+    """Ajoute au chiffrage les lignes d'un bloc du catalogue ; renvoie les lignes créées."""
+    p = finances.parametres(db.mission())
+    rang = max([e.get("rang") or 0 for e in db.lister("estimation")] or [0]) + 1
+    crees = []
+    for l in catalogue.lignes(ident, niveau, mode, lot, quantite, db.lister("profil"), libelle, p["marges"]):
+        crees.append(db.creer("estimation", {**l, "rang": rang}))
+    return crees
 
 
 def modifier_fiche(corps):

@@ -63,7 +63,8 @@ Ce que l'assistant peut faire :
   `synthese`, `lister_elements` (avec recherche), `lire_element`, `suivi_risques`, `chiffrage`,
   `budget`, `attentes_client`, `gouvernance`, `historique`, `exporter_mission`.
 - **Écrire** : `creer_element`, `modifier_element`, `supprimer_element`, `modifier_fiche_mission`,
-  `annuler_modification`, `proposer_creneaux`, `creer_mission`.
+  `annuler_modification`, `proposer_creneaux`, `creer_mission`, `chiffrer_avec_bloc`
+  (avec `catalogue_chiffrage` en lecture).
 - **Prompts prêts à l'emploi** : `revue_hebdomadaire`, `integrer_compte_rendu`, `preparer_comite`.
 - **Ressources** : `copilote://missions`, `copilote://modele`, `copilote://mission/{cle}/synthese`.
 
@@ -131,6 +132,20 @@ Deux modes qui coexistent :
   combinée en estimation PERT et valorisée au TJM du profil. « Initialiser depuis le macro »
   reprend les éléments du macro comme point de départ.
 
+**Catalogue de blocs** : 34 blocs types prêts à l'emploi (récupération de la data, qualité des
+données, pipeline, API, écran standard, interface avec un système tiers, POC d'IA générative,
+RAG, recette, mise en production, RGPD, conduite du changement, pilotage…), en neuf familles.
+Chaque bloc a trois niveaux : **simple et clair** (rapide), **compliqué mais chemin clair**
+(moyen), **aucune information** (long), avec des jours par rôle type et, pour chaque niveau,
+un critère de choix : les signes concrets qui orientent vers ce niveau (accès ouverts ou non,
+propriétaire identifié, documentation…) et ce que couvre la charge. Ce critère est repris dans
+l'hypothèse de la ligne créée, pour justifier le chiffrage au client
+(textes dans `catalogue_criteres.py`). Appliqué avec un lot et une
+quantité, il crée une ligne par rôle en mode détaillé (rôle rapproché des profils de la mission
+par nom, puis par métier) ou une ligne en mode macro ; la fourchette suit le niveau. Les blocs se
+personnalisent ou se créent depuis l'interface ; ils sont communs à toutes les missions
+(`missions/catalogue-chiffrage.json`). Les valeurs par défaut sont un point de départ à calibrer.
+
 Les majorations (pilotage, qualité, contingence) s'appliquent aux deux. Une comparaison par lot
 montre l'écart entre les deux modes. Le mode retenu sert de budget de référence tant que le
 budget vendu n'est pas saisi ; « Reporter en budget vendu » le fixe.
@@ -176,6 +191,8 @@ modèle par défaut.
 | `server.py` | Serveur HTTP local et routes de l'API |
 | `db.py` | Modèle de données, un fichier SQLite par mission, historique, export et import JSON |
 | `calculs.py` | KPI, atterrissage, déclencheurs, contrôles — déterministe, sans LLM |
+| `catalogue_criteres.py` | Critères de choix des trois niveaux de chaque bloc |
+| `catalogue.py` | Catalogue des blocs de chiffrage à trois niveaux, personnalisation, application |
 | `finances.py` | Chiffrage en deux modes, budget, attentes du client — déterministe, sans LLM |
 | `donnees.py` | Données composées partagées par l'API et les exports |
 | `meteo.py` | Assemblage de la météo hebdomadaire |
@@ -190,7 +207,7 @@ modèle par défaut.
 | `static/pilotage.js` | Vues de pilotage : synthèse, suivi des risques, décisions, météo, saisies |
 | `static/graphes.js` | Indicateurs en graphiques |
 | `static/finances.js` | Chiffrage, budget, attentes du client |
-| `tests/` | `test_calculs.py`, `test_agenda_exports.py`, `test_missions.py`, `test_finances.py`, `test_mcp.py` (chacun : `python tests/<fichier>`) |
+| `tests/` | `test_calculs.py`, `test_agenda_exports.py`, `test_missions.py`, `test_finances.py`, `test_mcp.py`, `test_catalogue.py` (chacun : `python tests/<fichier>`) |
 
 ## Principes tenus par le code
 

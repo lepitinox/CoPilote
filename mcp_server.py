@@ -22,6 +22,7 @@ from mcp.server.mcpserver.exceptions import ToolError  # noqa: E402
 from mcp.types import ToolAnnotations  # noqa: E402
 
 import agenda  # noqa: E402
+import catalogue  # noqa: E402
 import db  # noqa: E402
 import donnees  # noqa: E402
 import finances  # noqa: E402
@@ -223,7 +224,34 @@ def exporter_mission(mission: str | None = None) -> dict[str, Any]:
         return db.exporter_mission()
 
 
+@serveur.tool(annotations=LECTURE)
+def catalogue_chiffrage(recherche: str | None = None) -> dict[str, Any]:
+    """Catalogue des blocs de chiffrage types (récupération de la data, API, recette…). Chaque bloc a
+    trois niveaux : rapide (simple et clair), moyen (compliqué mais chemin clair), long (aucune
+    information), avec les jours par rôle et le total. `recherche` filtre sur le nom, la famille ou
+    la description."""
+    c = catalogue.catalogue()
+    if recherche:
+        r = recherche.lower()
+        c["blocs"] = [b for b in c["blocs"] if r in f"{b['nom']} {b['famille']} {b['description']}".lower()]
+    return c
+
+
 # ---------------------------------------------------------------- écriture
+
+@serveur.tool(annotations=ECRITURE)
+def chiffrer_avec_bloc(bloc: str, niveau: str, mode: str = "detaille", lot: str = "", quantite: float = 1,
+                       libelle: str | None = None, mission: str | None = None) -> dict[str, Any]:
+    """Ajoute au chiffrage un bloc du catalogue. niveau : rapide | moyen | long ; mode : detaille (une
+    ligne par rôle, rapproché des profils de la mission) ou macro (une ligne) ; quantite : nombre
+    d'unités du bloc (par exemple 3 sources de données) ; libelle remplace le nom du bloc."""
+    with _sur(mission):
+        try:
+            crees = donnees.appliquer_bloc(bloc, niveau, mode, lot, quantite, libelle)
+        except ValueError as e:
+            raise ToolError(str(e)) from None
+    return {"lignes_creees": crees}
+
 
 @serveur.tool(annotations=ECRITURE)
 def creer_element(table: str, champs: dict[str, Any], mission: str | None = None) -> dict[str, Any]:
