@@ -12,7 +12,7 @@ import meteo
 # Éléments que l'interface et l'assistant (MCP) peuvent créer, modifier et supprimer.
 EDITABLES = {"jalon", "livrable", "sprint", "risque", "decision", "compte_rendu",
              "lot", "lot_element", "story", "activite", "acteur", "instance", "raci", "metier",
-             "estimation", "profil", "consommation", "depense", "facture", "attente", "hypothese"}
+             "estimation", "profil", "consommation", "depense", "facture", "attente", "hypothese", "changement"}
 CHAMPS_JSON_MISSION = ("seuils", "raci_roles", "chiffrage")
 
 
@@ -63,12 +63,14 @@ def _hypothese_invalidee(h, aujourdhui=None):
     return db.modifier("hypothese", h["id"], {"risque_id": r["id"]})
 
 
-def appliquer_bloc(ident, niveau, mode="detaille", lot="", quantite=1, libelle=None):
+def appliquer_bloc(ident, niveau, mode="detaille", lot="", quantite=1, libelle=None, changement_id=None):
     """Ajoute au chiffrage les lignes d'un bloc du catalogue ; renvoie les lignes créées."""
     p = finances.parametres(db.mission())
     rang = max([e.get("rang") or 0 for e in db.lister("estimation")] or [0]) + 1
     crees = []
     for l in catalogue.lignes(ident, niveau, mode, lot, quantite, db.lister("profil"), libelle, p["marges"]):
+        if changement_id:  # chiffrage d'une demande de changement : hors du chiffrage de la mission
+            l = {**l, "mode": "changement", "changement_id": changement_id}
         crees.append(db.creer("estimation", {**l, "rang": rang}))
     if niveau == "long" and crees:
         # Chiffrer « sans information », c'est faire une hypothèse : elle est suivie jusqu'à la collecte.

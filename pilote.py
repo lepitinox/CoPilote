@@ -310,6 +310,17 @@ def a_traiter(aujourdhui=None):
                                f"Lot {e.get('lot')} livré le {calculs.fr(lot['date'])}", "lot_element", e["id"],
                                actions=[{"libelle": "Obtenu", "table": "lot_element", "id": e["id"], "champs": {"statut": "obtenu"}}]))
 
+    for c in db.lister("changement"):
+        cree = _d(c.get("cree_le"))
+        age = (auj - cree).days if cree else 0
+        if c.get("statut") == "à instruire" and age > 7:
+            items.append(_item("surveiller" if age <= 21 else "maintenant", "changement",
+                               f"Demande de changement à chiffrer depuis {age} jours : {c['titre']}",
+                               c.get("demandeur") or "", "changement", c["id"], vue="changements"))
+        elif c.get("statut") == "chiffrée":
+            items.append(_item("semaine", "changement", f"Demande de changement chiffrée, à présenter : {c['titre']}",
+                               "Préparer la décision du comité", "changement", c["id"], vue="changements"))
+
     en_attente = db.lister("proposition", "statut = 'en attente'")
     if en_attente:
         items.append(_item("semaine", "compte_rendu", f"{len(en_attente)} proposition(s) extraite(s) des comptes rendus à valider",

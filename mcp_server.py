@@ -24,6 +24,7 @@ from mcp.types import ToolAnnotations  # noqa: E402
 import agenda  # noqa: E402
 import pilote  # noqa: E402
 import catalogue  # noqa: E402
+import changements  # noqa: E402
 import db  # noqa: E402
 import donnees  # noqa: E402
 import finances  # noqa: E402
@@ -60,6 +61,10 @@ DESCRIPTIONS = {
     "consommation": "Temps consommé : mois (AAAA-MM), profil (nom), jours.",
     "depense": "Dépense hors temps passé : montant, catégorie, statut (prévue | engagée | payée).",
     "facture": "Échéance de facturation : montant, date prévue, statut (à facturer | facturée | payée), jalon déclencheur.",
+    "changement": "Demande de changement : titre, description, demandeur, décideur, origine (attente | hypothese | "
+                  "risque | directe, avec origine_id), lot, statut (à instruire | chiffrée | présentée | acceptée | refusée | "
+                  "reportée), décalage des jalons en jours et jalons_ids touchés. Utiliser les outils dédiés pour créer, "
+                  "chiffrer, présenter et décider.",
     "hypothese": "Hypothèse suivie (planning, chiffrage, périmètre, organisation, technique, données, budget) : "
                  "statut à vérifier | confirmée | invalidée, porteur qui doit la confirmer, échéance de vérification, "
                  "impact si elle est invalidée. Passer une hypothèse à « invalidée » crée le risque correspondant (risque_id).",
@@ -270,6 +275,59 @@ def catalogue_chiffrage(recherche: str | None = None) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------- écriture
+
+@serveur.tool(annotations=LECTURE)
+def suivi_changements(mission: str | None = None) -> dict[str, Any]:
+    """Demandes de changement avec leur origine, leur chiffrage (jours, montant, fourchette), leur statut,
+    et le cumul accepté (montant, part du budget initial, décalage)."""
+    with _sur(mission):
+        return changements.suivi(_auj())
+
+
+def _cr(fn, *args):
+    try:
+        return fn(*args)
+    except changements.ErreurChangement as e:
+        raise ToolError(str(e)) from None
+
+
+@serveur.tool(annotations=ECRITURE)
+def creer_changement(titre: str = "", origine_type: str = "directe", origine_id: int | None = None,
+                     champs: dict[str, Any] | None = None, mission: str | None = None) -> dict[str, Any]:
+    """Crée une demande de changement. origine_type : attente | hypothese | risque | directe ; avec une
+    origine, le titre, le demandeur, le lot et la description sont repris de l'élément d'origine.
+    champs : description, demandeur, decideur, lot, impact_delai_jours, jalons_ids (liste d'id)."""
+    corps = {k: (json.dumps(v) if isinstance(v, list) else v) for k, v in (champs or {}).items()}
+    corps.update({k: v for k, v in (("titre", titre), ("origine_type", origine_type), ("origine_id", origine_id)) if v})
+    with _sur(mission):
+        return _cr(changements.creer, corps, _auj())
+
+
+@serveur.tool(annotations=ECRITURE)
+def chiffrer_changement(changement: int, bloc: str, niveau: str, quantite: float = 1,
+                        mission: str | None = None) -> dict[str, Any]:
+    """Ajoute un bloc du catalogue (niveau rapide | moyen | long) au chiffrage d'une demande de changement."""
+    with _sur(mission):
+        lignes = _cr(changements.chiffrer_avec_bloc, changement, bloc, niveau, quantite)
+        return {"lignes_creees": lignes, "chiffrage": changements.chiffrage(changement)}
+
+
+@serveur.tool(annotations=ECRITURE)
+def presenter_changement(changement: int, instance: str | None = None, echeance: str | None = None,
+                         mission: str | None = None) -> dict[str, Any]:
+    """Crée la décision « à prendre » d'une demande (rattachée au comité par défaut) : elle figure alors à
+    l'ordre du jour de la séance."""
+    with _sur(mission):
+        return _cr(changements.presenter, changement, instance, echeance, _auj())
+
+
+@serveur.tool(annotations=SUPPRESSION)
+def decider_changement(changement: int, choix: str, motif: str = "", mission: str | None = None) -> dict[str, Any]:
+    """Enregistre la décision : accepter (avenant : budget vendu, reste à faire et jalons mis à jour),
+    refuser ou reporter. À n'appeler qu'avec la décision effective du client ou du comité."""
+    with _sur(mission):
+        return _cr(changements.decider, changement, choix, motif, _auj())
+
 
 @serveur.tool(annotations=ECRITURE)
 def chiffrer_avec_bloc(bloc: str, niveau: str, mode: str = "detaille", lot: str = "", quantite: float = 1,

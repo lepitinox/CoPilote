@@ -117,6 +117,26 @@ def _charger(aujourdhui):
     demo_cadre.charger(j)
     finances_demo(auj, j)
     hypotheses_demo(j)
+    changements_demo(auj, j)
+
+
+def changements_demo(auj, j):
+    """Une demande acceptée (déjà incluse dans le budget vendu) et une demande chiffrée à présenter."""
+    import changements
+    jalons = {x["libelle"]: x["id"] for x in db.lister("jalon")}
+    acceptee = changements.creer({"titre": "Export Excel des contrats pour les courtiers", "origine_type": "directe",
+                                  "demandeur": "Marc L.", "decideur": "Marc L.", "lot": "V1",
+                                  "description": "Les courtiers veulent extraire leur portefeuille pour leurs propres outils."}, auj)
+    changements.chiffrer_avec_bloc(acceptee["id"], "generation-documents", "moyen")
+    montant = changements.chiffrage(acceptee["id"])["montant"]
+    db.modifier("changement", acceptee["id"], {"statut": "acceptée", "montant_applique": montant, "cree_le": j(-50),
+                                               "decide_le": j(-35), "avenant_le": j(-35), "motif": "Validé au comité sponsor"})
+    attente = next(a for a in db.lister("attente") if a["libelle"].startswith("Signature électronique"))
+    cr = changements.creer({"origine_type": "attente", "origine_id": attente["id"], "decideur": "Marc L.", "lot": "V1",
+                            "impact_delai_jours": 21, "jalons_ids": json.dumps([jalons["Mise en service V1"]])}, auj)
+    changements.chiffrer_avec_bloc(cr["id"], "interface-tiers", "moyen", libelle="Intégration de la solution de signature")
+    changements.chiffrer_avec_bloc(cr["id"], "ecran-standard", "moyen", 2, "Écrans de signature et de suivi")
+    db.modifier("changement", cr["id"], {"cree_le": j(-4)})
 
 
 def hypotheses_demo(j):

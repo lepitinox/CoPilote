@@ -47,7 +47,7 @@ LIBELLES = {
     "synthese": "Synthèse", "kpi": "Indicateurs", "risques": "Suivi des risques",
     "decisions": "Décisions et actions", "meteo": "Météo hebdomadaire", "sprints": "Sprints",
     "chiffrage": "Chiffrage", "budget": "Budget", "attentes": "Attentes du client",
-    "seance": "Préparation de séance",
+    "seance": "Préparation de séance", "changements": "Demandes de changement",
 }
 SANS_EXCEL = {"meteo"}
 TAILLE_MAX_MODELE = 25 * 1024 * 1024
@@ -430,6 +430,32 @@ def v_synthese(aujourdhui=None):
     return diapos
 
 
+CR_COULEURS = {"acceptée": VERT, "refusée": ROUGE, "présentée": ORANGE, "chiffrée": ORANGE}
+
+
+def v_changements(aujourdhui=None):
+    import changements
+    s = changements.suivi(aujourdhui)
+    euros, ca = finances.euros, s["cumul_accepte"]
+    tu = tuiles([("En cours", str(s["en_cours"]["nombre"]), f"{euros(s['en_cours']['montant'])} en jeu"),
+                 ("Acceptées (avenants)", euros(ca["montant"]),
+                  f"+{round(ca['part_budget_initial'] * 100)} % du budget initial" if ca["part_budget_initial"] is not None else ""),
+                 ("Décalage accepté", f"{ca['delai_jours']} j" if ca["delai_jours"] else "—", ""),
+                 ("Refusées ou reportées", str(s["compte"]["refusée"] + s["compte"]["reportée"]), "")])
+    d = s["demandes"]
+    if not d:
+        return [diapo("Demandes de changement", tu, texte(["Aucune demande de changement."]))]
+    return [diapo("Demandes de changement", tu, tableau(
+        ["Demande", "Origine", "Statut", "Charge", "Montant", "Décalage", "Décision"],
+        [[c["titre"], c["origine"]["libelle_type"], c["statut"],
+          _j(c["chiffrage"]["total_jours"]["retenu"]) if c["chiffrage"]["lignes"] else "non chiffrée",
+          euros(c["chiffrage"]["montant"]) if c["chiffrage"]["lignes"] else "",
+          f"{c['impact_delai_jours']} j" if c.get("impact_delai_jours") else "",
+          (fr(c.get("decide_le")) + (f" — {c['motif']}" if c.get("motif") else "")) if c.get("decide_le") else ""] for c in d],
+        {(i, 2): _style(CR_COULEURS.get(c["statut"], ("EEF0F3", DOUX))) for i, c in enumerate(d)},
+        [2.4, 1.3, 0.9, 0.8, 1, 0.8, 1.8], taille=9))]
+
+
 def v_seance(instance_id=None, aujourdhui=None):
     import pilote
     if instance_id is None:
@@ -755,6 +781,7 @@ def construire(vue, meteo_id=None, aujourdhui=None):
         "chiffrage": v_chiffrage, "budget": lambda: v_budget(aujourdhui),
         "attentes": lambda: v_attentes(aujourdhui),
         "seance": lambda: v_seance(meteo_id, aujourdhui),
+        "changements": lambda: v_changements(aujourdhui),
     }
     return fonctions[vue]()
 

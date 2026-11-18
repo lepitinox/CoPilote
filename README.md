@@ -65,6 +65,8 @@ Ce que l'assistant peut faire :
 - **Écrire** : `creer_element`, `modifier_element`, `supprimer_element`, `modifier_fiche_mission`,
   `annuler_modification`, `proposer_creneaux`, `creer_mission`, `chiffrer_avec_bloc`
   (avec `catalogue_chiffrage`, `a_traiter`, `preparer_seance` et `glissements` en lecture).
+- **Demandes de changement** : `suivi_changements` (lecture), `creer_changement`,
+  `chiffrer_changement`, `presenter_changement`, `decider_changement`.
 - **Prompts prêts à l'emploi** : `revue_hebdomadaire`, `integrer_compte_rendu`, `preparer_comite`.
 - **Ressources** : `copilote://missions`, `copilote://modele`, `copilote://mission/{cle}/synthese`.
 
@@ -89,7 +91,7 @@ Le menu est rangé par moment du pilotage :
 
 - **Aujourd'hui** : À traiter (page d'accueil), Synthèse.
 - **Piloter** : suivi des risques, attentes du client, décisions et actions (avec leur
-  ancienneté), macro-planning (reports et hypothèses du planning), indicateurs (avec, en bas de
+  ancienneté), demandes de changement, macro-planning (reports et hypothèses du planning), indicateurs (avec, en bas de
   page, le rappel du fonctionnement d'un sprint et des KPI à collecter), budget (analyse).
 - **Préparer et rendre compte** : gouvernance (préparation des séances), météo hebdomadaire.
 - **Cadrer** : fiche mission et hypothèses, feuille de route (vue d'ensemble ou détail pour
@@ -105,6 +107,27 @@ boutons agissent directement (« Marquer faite », « Obtenu », « Confirmée �
 
 L'évolution d'un risque est calculée par rapport à la dernière session, c'est-à-dire la
 dernière météo générée avant aujourd'hui : chaque météo garde une photo du registre.
+
+### Demandes de changement
+
+Toute évolution du périmètre suit le même chemin :
+
+1. **Origine** : une demande se crée directement, ou depuis une attente « à recadrer » ou une
+   hypothèse invalidée (bouton « Demande de changement ») ; titre, demandeur, lot et description
+   sont repris de l'origine.
+2. **Chiffrage** avec le catalogue de blocs (trois niveaux), valorisé aux TJM et majoré comme le
+   chiffrage de la mission, mais tenu à part ; décalage des jalons touchés en jours.
+3. **Présentation** : une décision « à prendre » est créée et rattachée au comité ; elle apparaît
+   dans les décisions à obtenir, la synthèse et l'ordre du jour de la séance.
+4. **Décision** : accepter, refuser ou reporter, avec un motif. Accepter applique l'avenant :
+   budget vendu augmenté du montant, reste à faire des profils augmenté des jours, jalons touchés
+   décalés (date de référence comprise, puisque l'engagement change), attente d'origine
+   « alignée », décision marquée prise — le tout tracé à l'historique sous « avenant ». Refuser
+   passe l'attente d'origine « hors périmètre » avec le motif.
+
+La vue de suivi donne le cumul accepté : montant, part du budget initial, jours et décalage.
+Une demande à chiffrer depuis plus d'une semaine, ou chiffrée et pas encore présentée, remonte
+dans À traiter.
 
 ### Hypothèses suivies
 
@@ -230,6 +253,7 @@ modèle par défaut.
 | `calculs.py` | KPI, atterrissage, déclencheurs, contrôles — déterministe, sans LLM |
 | `catalogue_criteres.py` | Critères de choix des trois niveaux de chaque bloc |
 | `catalogue.py` | Catalogue des blocs de chiffrage à trois niveaux, personnalisation, application |
+| `changements.py` | Demandes de changement : création, chiffrage, présentation, décision, avenant |
 | `pilote.py` | Besoins du pilote : à traiter, glissements, trois réponses, préparation de séance |
 | `finances.py` | Chiffrage en deux modes, budget, attentes du client — déterministe, sans LLM |
 | `donnees.py` | Données composées partagées par l'API et les exports |
@@ -244,9 +268,10 @@ modèle par défaut.
 | `static/cadre.js` | Vues du cadre : feuille de route, lotissement, story map, macro-planning, organisation, gouvernance, sprint et KPI, RACI |
 | `static/pilotage.js` | Vues de pilotage : synthèse, suivi des risques, décisions, météo, saisies |
 | `static/graphes.js` | Indicateurs en graphiques |
+| `static/changements.js` | Demandes de changement |
 | `static/pilote.js` | Page À traiter et préparation de séance |
 | `static/finances.js` | Chiffrage, budget, attentes du client |
-| `tests/` | `test_calculs.py`, `test_agenda_exports.py`, `test_missions.py`, `test_finances.py`, `test_mcp.py`, `test_catalogue.py`, `test_pilote.py` (chacun : `python tests/<fichier>`) |
+| `tests/` | `test_calculs.py`, `test_agenda_exports.py`, `test_missions.py`, `test_finances.py`, `test_mcp.py`, `test_catalogue.py`, `test_pilote.py`, `test_changements.py` (chacun : `python tests/<fichier>`) |
 
 ## Principes tenus par le code
 

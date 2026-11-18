@@ -33,6 +33,13 @@ TABLES = {
         "chiffrage": "TEXT", "budget_vendu": "REAL",
         "hypotheses_reprises": "INTEGER",  # ancien champ texte « hypotheses » repris en lignes
     },
+    # Demandes de changement. origine_type : attente | hypothese | risque | directe ;
+    # jalons_ids : jalons décalés de impact_delai_jours si la demande est acceptée (avenant).
+    "changement": {"titre": "TEXT", "description": "TEXT", "demandeur": "TEXT", "decideur": "TEXT",
+                   "origine_type": "TEXT", "origine_id": "INTEGER", "lot": "TEXT", "statut": "TEXT",
+                   "impact_delai_jours": "INTEGER", "jalons_ids": "TEXT", "decision_id": "INTEGER",
+                   "montant_applique": "REAL", "motif": "TEXT", "cree_le": "TEXT", "decide_le": "TEXT",
+                   "avenant_le": "TEXT"},
     # Hypothèses suivies : ce sur quoi reposent le planning, le chiffrage, le périmètre.
     # statut : à vérifier | confirmée | invalidée ; une hypothèse invalidée fait naître un risque.
     "hypothese": {"libelle": "TEXT", "categorie": "TEXT", "statut": "TEXT", "source": "TEXT",
@@ -43,7 +50,8 @@ TABLES = {
     "estimation": {"mode": "TEXT", "lot": "TEXT", "libelle": "TEXT", "taille": "TEXT",
                    "confiance": "TEXT", "profil": "TEXT", "jours_bas": "REAL",
                    "jours_probable": "REAL", "jours_haut": "REAL", "hypothese": "TEXT",
-                   "rang": "INTEGER", "bloc": "TEXT", "niveau": "TEXT"},  # bloc du catalogue d'origine
+                   "rang": "INTEGER", "bloc": "TEXT", "niveau": "TEXT",  # bloc du catalogue d'origine
+                   "changement_id": "INTEGER"},  # mode « changement » : chiffrage d'une demande de changement
     # Budget. Profils vendus (TJM de vente, coût journalier, reste à faire en jours).
     "profil": {"nom": "TEXT", "metier": "TEXT", "tjm": "REAL", "cout_journalier": "REAL",
                "raf_jours": "REAL", "rang": "INTEGER"},
@@ -128,6 +136,7 @@ ORDRE = {
     "estimation": "mode, lot, rang, id", "profil": "rang, id", "consommation": "mois, id",
     "depense": "date, id", "facture": "date_prevue, id",
     "attente": "partie_prenante, priorite, id",
+    "changement": "CASE statut WHEN 'présentée' THEN 0 WHEN 'chiffrée' THEN 1 WHEN 'à instruire' THEN 2 ELSE 3 END, id",
     "hypothese": "CASE statut WHEN 'invalidée' THEN 0 WHEN 'à vérifier' THEN 1 ELSE 2 END, echeance, id",
 }
 

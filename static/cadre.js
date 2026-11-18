@@ -10,7 +10,9 @@ const colonnesHypotheses = [
   ["Catégorie", h => h.categorie || "—"], ["Statut", h => [pastilleHypothese(h.statut), h.risque_id ? el("div", { style: "font-size:12.5px;color:var(--doux)" }, "→ risque créé") : null]],
   ["Qui confirme", h => h.porteur || (h.statut === "à vérifier" ? pastille("orange", "À désigner") : "—")],
   ["Échéance", h => [dateFr(h.echeance), h.statut === "à vérifier" && h.echeance && h.echeance < new Date().toISOString().slice(0, 10) ? [" ", pastille("rouge", "Dépassée")] : null]],
-  ["Lot", h => (h.lot ? pastilleLot(h.lot) : "—")]];
+  ["Lot", h => (h.lot ? pastilleLot(h.lot) : "—")],
+  ["", h => (h.statut === "invalidée" ? el("button", { title: "Instruire les conséquences comme une demande de changement",
+    onclick: e => { e.stopPropagation(); nouvelleDemande("hypothese", h.id); } }, "Demande de changement") : "")]];
 const puce = (type, objet, texte, detail, classe = "") => el("button", {
   class: "puce " + classe, title: "Modifier", onclick: () => formulaire(type, objet, recharger) },
   texte, detail && el("small", {}, detail));

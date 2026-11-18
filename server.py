@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import agenda  # noqa: E402
 import calculs  # noqa: E402
 import catalogue  # noqa: E402
+import changements  # noqa: E402
 import db  # noqa: E402
 import demo  # noqa: E402
 import donnees  # noqa: E402
@@ -352,6 +353,8 @@ class Requete(BaseHTTPRequestHandler):
                 return synthese()
             if nom == "suivi_risques":
                 return suivi_risques()
+            if nom == "suivi_changements":
+                return changements.suivi(aujourdhui())
             if nom == "a_traiter":
                 return pilote.a_traiter(aujourdhui())
             if nom == "glissements":
@@ -375,6 +378,11 @@ class Requete(BaseHTTPRequestHandler):
                                   int(q["avant"]) if q["avant"].isdigit() else None)
             if nom in LISIBLES and not action:
                 return db.lister(nom)
+        if methode == "GET" and nom == "changement" and ident and action == "detail":
+            try:
+                return changements.detail(ident)
+            except changements.ErreurChangement as e:
+                raise Erreur(str(e), 404)
         if methode == "GET" and nom == "instance" and ident and action == "seance":
             try:
                 return pilote.preparer_seance(ident, aujourdhui())
@@ -400,6 +408,22 @@ class Requete(BaseHTTPRequestHandler):
             if nom == "estimation" and not ident and action == "depuis_macro":
                 with db.origine("détaillé initialisé depuis le macro"):
                     return detailler_depuis_macro()
+            if nom == "changement":
+                try:
+                    if not ident and not action:
+                        return changements.creer(self._corps(), aujourdhui())
+                    c = self._corps()
+                    if ident and action == "chiffrer":
+                        with db.origine("chiffrage d'une demande de changement"):
+                            return changements.chiffrer_avec_bloc(ident, c.get("bloc"), c.get("niveau"),
+                                                                  c.get("quantite") or 1, c.get("libelle") or None)
+                    if ident and action == "presenter":
+                        with db.origine("demande de changement présentée"):
+                            return changements.presenter(ident, c.get("instance"), c.get("echeance"), aujourdhui())
+                    if ident and action == "decider":
+                        return changements.decider(ident, c.get("choix"), c.get("motif") or "", aujourdhui())
+                except changements.ErreurChangement as e:
+                    raise Erreur(str(e))
             if nom == "journal" and ident and action == "annuler":
                 return {"element": db.annuler(ident)}  # None si l'annulation a supprimé l'élément
             if nom == "compte_rendu" and ident and action == "extraire":

@@ -208,7 +208,9 @@ VUES.attentes = ["Attentes du client", PILOTAGE, async v => {
         ["Position", l => pastille(POSITIONS[l.position] || "neutre", l.position || "—")],
         ["Notre réponse", l => [l.reponse || "", l.prochaine_action && el("div", { style: "color:var(--doux);font-size:13px" }, "→ " + l.prochaine_action)], "long"],
         ["Échéance", l => dateFr(l.echeance)],
-        ["Revue", l => [dateFr(l.revue_le), l.revue_due ? [" ", pastille("orange", "À revoir")] : null]]], recharger));
+        ["Revue", l => [dateFr(l.revue_le), l.revue_due ? [" ", pastille("orange", "À revoir")] : null]],
+        ["", l => (l.position === "à recadrer" ? el("button", { title: "Instruire cette attente comme une demande de changement",
+          onclick: e => { e.stopPropagation(); nouvelleDemande("attente", l.id); } }, "Demande de changement") : "")]], recharger));
   }
 }];
 
@@ -226,7 +228,7 @@ function lireRoles(texte) {
   return out;
 }
 
-async function dialogueCatalogue(mode) {
+async function dialogueCatalogue(mode, changement) {
   const d = $("#dialogue"), cat = await api("GET", "catalogue");
   d.classList.add("large");
   if (!d.dataset.nettoyage) {
@@ -240,9 +242,13 @@ async function dialogueCatalogue(mode) {
   const liste = el("div", { style: "display:grid;gap:8px;max-height:56vh;overflow-y:auto;padding-right:4px" });
   const ajouter = async (b, n, bouton) => {
     await pendant(bouton, "…", async () => {
-      const crees = await api("POST", "catalogue/appliquer", { bloc: b.id, niveau: n, mode, lot: etatCat.lot, quantite: Number(etatCat.quantite) || 1 });
+      const quantite = Number(etatCat.quantite) || 1;
+      const crees = changement
+        ? await api("POST", `changement/${changement.id}/chiffrer`, { bloc: b.id, niveau: n, quantite })
+        : await api("POST", "catalogue/appliquer", { bloc: b.id, niveau: n, mode, lot: etatCat.lot, quantite });
       ajoutes += crees.length;
-      compteur.textContent = `${ajoutes} ligne(s) ajoutée(s) au chiffrage ${MODES[mode][0].toLowerCase()}.`;
+      compteur.textContent = changement ? `${ajoutes} ligne(s) ajoutée(s) au chiffrage de la demande.`
+        : `${ajoutes} ligne(s) ajoutée(s) au chiffrage ${MODES[mode][0].toLowerCase()}.`;
       dire(`« ${b.nom} » ajouté (${cat.niveaux[n].libelle.toLowerCase()}).`);
     });
   };
@@ -257,7 +263,7 @@ async function dialogueCatalogue(mode) {
         el("div", { class: "tete" }, el("span", { class: "titre" }, b.nom),
           el("span", { style: "color:var(--doux);font-size:13px" }, b.unite),
           b.origine === "personnalisé" && pastille("neutre", "personnalisé"),
-          el("button", { type: "button", class: "lien", style: "margin-left:auto;font-size:13px", onclick: () => editeurBloc(b, cat, mode) }, "Personnaliser")),
+          !changement && el("button", { type: "button", class: "lien", style: "margin-left:auto;font-size:13px", onclick: () => editeurBloc(b, cat, mode) }, "Personnaliser")),
         el("div", { class: "detail", style: "font-size:13.5px" }, b.description),
         el("div", { class: "niveaux-bloc" }, Object.entries(cat.niveaux).map(([n, def]) => el("div", { class: "niveau-bloc" },
           el("button", { type: "button", title: "Ajouter ce niveau au chiffrage", onclick: e => ajouter(b, n, e.currentTarget) },
@@ -275,16 +281,16 @@ async function dialogueCatalogue(mode) {
   const quantite = el("input", { type: "number", min: "0.5", step: "0.5", oninput: e => { etatCat.quantite = e.target.value; dessiner(); } });
   quantite.value = etatCat.quantite;
   d.replaceChildren(el("form", { method: "dialog", onsubmit: e => { e.preventDefault(); d.close(); } },
-    el("h3", {}, `Catalogue de blocs — chiffrage ${MODES[mode][0].toLowerCase()}`),
+    el("h3", {}, changement ? `Chiffrer la demande de changement : ${changement.titre}` : `Catalogue de blocs — chiffrage ${MODES[mode][0].toLowerCase()}`),
     el("p", { class: "aide", style: "margin:0" },
       "Chaque bloc a trois niveaux : simple et clair (rapide), compliqué mais chemin clair (moyen), aucune information (long). "
       + (mode === "detaille" ? "En détaillé, une ligne par rôle, rapprochée de vos profils par nom puis par métier." : "En macro, une ligne par bloc avec la fourchette du niveau.")
       + " Les charges sont un point de départ : personnalisez-les pour votre contexte."),
     el("div", { class: "champs", style: "grid-template-columns:2fr 1.4fr 1fr .8fr;align-items:end" }, recherche, famille,
-      el("label", {}, "Lot", lot), el("label", {}, "Quantité", quantite)),
+      changement ? el("span", {}) : el("label", {}, "Lot", lot), el("label", {}, "Quantité", quantite)),
     liste,
     el("div", { class: "barre" }, compteur, el("span", { class: "pousse" }),
-      el("button", { type: "button", onclick: () => editeurBloc(null, cat, mode) }, "Nouveau bloc"),
+      !changement && el("button", { type: "button", onclick: () => editeurBloc(null, cat, mode) }, "Nouveau bloc"),
       el("button", { class: "principal" }, "Terminer"))));
   dessiner();
   if (!d.open) d.showModal();

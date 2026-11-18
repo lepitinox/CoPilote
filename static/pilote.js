@@ -8,7 +8,7 @@ const GROUPES_A_TRAITER = {
 };
 const GENRES = { action: "Action", decision: "Décision", risque: "Risque", jalon: "Jalon", facture: "Facturation",
   attente: "Client", compte_rendu: "Compte rendu", sprint: "Sprint", meteo: "Météo", reunion: "Réunion",
-  hypothese: "Hypothèse", prerequis: "Prérequis" };
+  hypothese: "Hypothèse", prerequis: "Prérequis", changement: "Changement" };
 
 VUES.aujourdhui = ["À traiter", AUJOURDHUI, async v => {
   const t = await api("GET", "a_traiter");

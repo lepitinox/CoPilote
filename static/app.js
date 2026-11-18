@@ -173,6 +173,15 @@ const ENTITES = {
     ["position", "Position", "choix", ["alignée", "à recadrer", "hors périmètre"]], ["echeance", "Échéance", "date"],
     ["reponse", "Notre réponse, engagement ou message de recadrage", "long", null, true],
     ["prochaine_action", "Prochaine action", "texte", null, true], ["revue_le", "Dernière revue avec le client", "date"]] },
+  changement: { nom: "demande de changement", champs: [
+    ["titre", "Demande", "texte", null, true], ["description", "Ce qui est demandé, et pourquoi", "long", null, true],
+    ["demandeur", "Demandeur", "choix", () => [["", "—"], ...ref.acteurs.map(a => [a.nom, a.nom])]],
+    ["decideur", "Qui décide", "choix", () => [["", "—"], ...ref.acteurs.map(a => [a.nom, a.nom])]],
+    ["lot", "Lot concerné", "choix", () => [["", "—"], ...nomsLots().map(n => [n, n])]],
+    ["origine_type", "Origine", "choix", [["directe", "Demande directe"], ["attente", "Attente du client"], ["hypothese", "Hypothèse invalidée"], ["risque", "Risque"]]],
+    ["impact_delai_jours", "Décalage des jalons si acceptée (jours)", "nombre"],
+    ["jalons_ids", "Jalons décalés si la demande est acceptée", "jalons", null, true],
+    ["statut", "Statut", "choix", ["à instruire", "chiffrée", "présentée", "acceptée", "refusée", "reportée"]]] },
   hypothese: { nom: "hypothèse", champs: [
     ["libelle", "Hypothèse", "texte", null, true],
     ["categorie", "Catégorie", "choix", ["planning", "chiffrage", "périmètre", "organisation", "technique", "données", "budget"]],
@@ -203,6 +212,14 @@ function formulaire(type, objet, apres, defauts = {}) {
       s = el("div", { class: "personnes" }, cases.length ? cases : el("span", { style: "color:var(--doux)" }, "Aucune personne dans l'organisation."));
       saisies[cle] = [s, genre];
       return el("div", { class: large ? "large" : "" }, el("div", { style: "font-size:13px;color:var(--doux);margin-bottom:4px" }, lib), s);
+    } else if (genre === "jalons") {
+      const choisis = new Set(idsDe(v));
+      const cases = ref.jalons.map(j => el("label", { class: "case", style: "font-size:14px" },
+        el("input", { type: "checkbox", value: j.id, checked: choisis.has(j.id) }),
+        j.libelle, el("span", { style: "color:var(--doux)" }, " · " + dateFr(j.date))));
+      s = el("div", { class: "personnes" }, cases.length ? cases : el("span", { style: "color:var(--doux)" }, "Aucun jalon."));
+      saisies[cle] = [s, "personnes"];
+      return el("div", { class: large ? "large" : "" }, el("div", { style: "font-size:13px;color:var(--doux);margin-bottom:4px" }, lib), s);
     } else if (genre === "case") {
       s = el("input", { type: "checkbox", checked: !!v });
       saisies[cle] = [s, genre];
@@ -223,6 +240,8 @@ function formulaire(type, objet, apres, defauts = {}) {
     for (const [cle, [s, genre]] of Object.entries(saisies))
       corps[cle] = genre === "nombre" ? (s.value === "" ? null : Number(s.value)) : genre === "case" ? (s.checked ? 1 : 0)
         : genre === "personnes" ? JSON.stringify([...s.querySelectorAll("input:checked")].map(c => Number(c.value))) : s.value;
+    // À la création, les valeurs par défaut hors formulaire (origine, rattachement) sont transmises.
+    if (!objet) for (const [k, val] of Object.entries(defauts)) if (!(k in corps)) corps[k] = val;
     try {
       if (objet) await api("PUT", `${type}/${objet.id}`, corps); else await api("POST", type, corps);
       d.close(); await apres();
@@ -331,7 +350,7 @@ const VUES = {};
 // compte, je cadre, je saisis.
 const MENU = [
   ["Aujourd'hui", ["aujourdhui", "synthese"]],
-  ["Piloter", ["risques", "attentes", "decisions", "planning", "kpi", "budget"]],
+  ["Piloter", ["risques", "attentes", "decisions", "changements", "planning", "kpi", "budget"]],
   ["Préparer et rendre compte", ["gouvernance", "meteo"]],
   ["Cadrer", ["mission", "route", "storymap", "organisation", "raci", "chiffrage"]],
   ["Saisir", ["sprints", "budget_saisie", "cr", "historique"]],
