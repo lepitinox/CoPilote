@@ -27,7 +27,7 @@ TABLES = {
         "nom": "TEXT", "client": "TEXT",
         "objectif_business": "TEXT", "objectif_solution": "TEXT", "objectif_projet": "TEXT",
         "porteur_business": "TEXT", "porteur_solution": "TEXT", "porteur_projet": "TEXT",
-        "hypotheses": "TEXT", "date_cible": "TEXT", "duree_sprint_jours": "INTEGER",
+        "hypotheses": "TEXT", "date_cible": "TEXT", "duree_sprint_jours": "INTEGER", "date_debut": "TEXT",
         "seuils": "TEXT", "raci_roles": "TEXT",
         # chiffrage : paramètres JSON (abaque, marges, majorations, mode retenu, TJM moyen)
         "chiffrage": "TEXT", "budget_vendu": "REAL",
@@ -355,8 +355,9 @@ def reprendre(source, parties):
             c.execute("UPDATE mission SET chiffrage = ? WHERE id = 1", (json.dumps(m_source["chiffrage"], ensure_ascii=False),))
 
 
-def creer_mission_complete(fiche, source=None, parties=()):
-    """Crée une mission avec sa fiche et, au besoin, le cadre repris d'une mission existante."""
+def creer_mission_complete(fiche, source=None, parties=(), modele=None):
+    """Crée une mission avec sa fiche et, au besoin, le cadre repris d'une mission existante ou
+    le cadre et le squelette d'un modèle (dates calculées depuis fiche["date_debut"])."""
     nom = (fiche.get("nom") or "").strip()
     if not nom:
         raise ValueError("Donnez un nom à la mission.")
@@ -366,7 +367,12 @@ def creer_mission_complete(fiche, source=None, parties=()):
             champs = {k: v for k, v in fiche.items() if k in TABLES["mission"] and k not in ("nom", "client") and v not in (None, "")}
             if champs:
                 modifier("mission", 1, champs)
-            if source and parties:
+            if modele:
+                import modeles_mission  # import tardif : le module s'appuie sur db
+                avertissements = modeles_mission.appliquer(modele, fiche.get("date_debut"))
+                if avertissements:
+                    modifier("mission", 1, {"hypotheses": "Blocs du modèle non repris : " + " ; ".join(avertissements)})
+            elif source and parties:
                 reprendre(source, list(parties))
     except Exception:
         os.remove(chemin_de(cle))

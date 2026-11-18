@@ -17,13 +17,26 @@ python server.py
 Puis ouvrir http://127.0.0.1:8765.
 
 - **« + Nouvelle mission »** (en-tête, ou dernière ligne du sélecteur de mission) : nom, client,
-  date cible, budget vendu, objectifs, pilote et durée de sprint ; au besoin, reprise du cadre
-  d'une mission existante — organisation, gouvernance (créneaux à reposer), profils et TJM,
+  date cible, budget vendu, objectifs, pilote et durée de sprint ; au besoin, un modèle de
+  mission (voir ci-dessous) ou la reprise du cadre d'une mission existante — organisation, gouvernance (créneaux à reposer), profils et TJM,
   RACI, paramètres du chiffrage — sans aucune donnée de suivi. La mission s'ouvre sur la liste
   « Démarrage de la mission » (page À traiter) : fiche, lots, jalons, organisation, gouvernance,
   hypothèses, chiffrage ou budget, attentes, risques, chacune avec son raccourci.
-- **« Missions »** : ouvrir, importer, exporter ou mettre à la corbeille une mission ; « Charger
-  la démo » ouvre une mission fictive, dans sa propre mission `demo`.
+- **« Missions »** : ouvrir, importer, exporter ou mettre à la corbeille une mission, l'enregistrer
+  comme modèle ; « Charger la démo » ouvre une mission fictive, dans sa propre mission `demo`.
+
+### Modèles de mission
+
+Un modèle apporte le **cadre** (organisation par rôles, gouvernance, profils et TJM, RACI,
+paramètres du chiffrage) et un **squelette** : lots et prérequis, jalons et activités en dates
+relatives (recalculées depuis la date de début de la nouvelle mission), hypothèses et risques
+types, story map, blocs de chiffrage préchoisis (premier chiffrage macro). Trois modèles sont
+fournis : projet agile de développement, projet data / IA, mission de conseil ou de cadrage
+(`modeles_fournis.py`). « Modèle » sur une mission l'enregistre comme modèle personnel
+(dossier `missions/modeles-mission/`, fichier JSON) : le nom, le client, le budget et tout le
+suivi sont exclus ; anonymisé par défaut (personnes remplacées par leur rôle, sans e-mail). Les
+textes des risques, hypothèses et prérequis sont repris tels quels : à relire si la mission est
+confidentielle.
 Le serveur n'écoute que sur la machine locale.
 
 `python-pptx` et `openpyxl` servent aux exports ; `anthropic` aux fonctions LLM ; `mcp` au serveur MCP. Sans clé
@@ -70,8 +83,8 @@ Ce que l'assistant peut faire :
   `synthese`, `lister_elements` (avec recherche), `lire_element`, `suivi_risques`, `chiffrage`,
   `budget`, `attentes_client`, `gouvernance`, `historique`, `exporter_mission`.
 - **Écrire** : `creer_element`, `modifier_element`, `supprimer_element`, `modifier_fiche_mission`,
-  `annuler_modification`, `proposer_creneaux`, `creer_mission` (avec reprise du cadre d'une
-  mission), `demarrage_mission`, `chiffrer_avec_bloc`
+  `annuler_modification`, `proposer_creneaux`, `creer_mission` (depuis un modèle ou avec reprise du
+  cadre d'une mission), `lister_modeles_mission`, `enregistrer_modele_mission`, `demarrage_mission`, `chiffrer_avec_bloc`
   (avec `catalogue_chiffrage`, `a_traiter`, `preparer_seance` et `glissements` en lecture).
 - **Demandes de changement** : `suivi_changements` (lecture), `creer_changement`,
   `chiffrer_changement`, `presenter_changement`, `decider_changement`.
@@ -261,6 +274,7 @@ modèle par défaut.
 | `calculs.py` | KPI, atterrissage, déclencheurs, contrôles — déterministe, sans LLM |
 | `catalogue_criteres.py` | Critères de choix des trois niveaux de chaque bloc |
 | `catalogue.py` | Catalogue des blocs de chiffrage à trois niveaux, personnalisation, application |
+| `modeles_mission.py`, `modeles_fournis.py` | Modèles de mission : enregistrement, application, modèles fournis |
 | `changements.py` | Demandes de changement : création, chiffrage, présentation, décision, avenant |
 | `pilote.py` | Besoins du pilote : à traiter, glissements, trois réponses, préparation de séance |
 | `finances.py` | Chiffrage en deux modes, budget, attentes du client — déterministe, sans LLM |
@@ -279,7 +293,7 @@ modèle par défaut.
 | `static/changements.js` | Demandes de changement |
 | `static/pilote.js` | Page À traiter et préparation de séance |
 | `static/finances.js` | Chiffrage, budget, attentes du client |
-| `tests/` | `test_calculs.py`, `test_agenda_exports.py`, `test_missions.py`, `test_finances.py`, `test_mcp.py`, `test_catalogue.py`, `test_pilote.py`, `test_changements.py` (chacun : `python tests/<fichier>`) |
+| `tests/` | `test_calculs.py`, `test_agenda_exports.py`, `test_missions.py`, `test_finances.py`, `test_mcp.py`, `test_catalogue.py`, `test_pilote.py`, `test_changements.py`, `test_modeles.py` (chacun : `python tests/<fichier>`) |
 
 ## Principes tenus par le code
 

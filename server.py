@@ -13,6 +13,7 @@ import agenda  # noqa: E402
 import calculs  # noqa: E402
 import catalogue  # noqa: E402
 import changements  # noqa: E402
+import modeles_mission  # noqa: E402
 import db  # noqa: E402
 import demo  # noqa: E402
 import donnees  # noqa: E402
@@ -336,6 +337,19 @@ class Requete(BaseHTTPRequestHandler):
                 return exports.etat_modeles()
         if chemin == "/api/catalogue" or chemin.startswith("/api/catalogue/"):
             return self._catalogue(methode, chemin)
+        if chemin == "/api/modeles_mission" or chemin.startswith("/api/modeles_mission/"):
+            reste = chemin[len("/api/modeles_mission"):].strip("/")
+            try:
+                if methode == "GET" and not reste:
+                    return modeles_mission.lister()
+                if methode == "GET" and reste:
+                    return modeles_mission.lire(reste)
+                if methode == "DELETE" and reste:
+                    modeles_mission.supprimer(reste)
+                    return modeles_mission.lister()
+            except ValueError as e:
+                raise Erreur(str(e), 404 if "introuvable" in str(e) else 400)
+            raise Erreur("Opération non prise en charge.", 404)
         if chemin == "/api/missions" or chemin.startswith("/api/missions/"):
             return self._missions(methode, chemin)
         m = re.fullmatch(r"/api/(\w+)(?:/(\d+))?(?:/(\w+))?", chemin)
@@ -493,7 +507,7 @@ class Requete(BaseHTTPRequestHandler):
                 corps = self._corps()
                 try:
                     cle = db.creer_mission_complete(corps.get("fiche") or {"nom": corps.get("nom"), "client": corps.get("client")},
-                                                    corps.get("source"), corps.get("reprendre") or [])
+                                                    corps.get("source"), corps.get("reprendre") or [], corps.get("modele"))
                 except ValueError as e:
                     raise Erreur(str(e))
                 db.marquer_derniere(cle)
@@ -517,6 +531,13 @@ class Requete(BaseHTTPRequestHandler):
                 contenu = json.dumps(db.exporter_mission(), ensure_ascii=False, indent=1)
             return Fichier(contenu, "application/json; charset=utf-8",
                            f"mission-{cle}-{aujourdhui().isoformat()}.json")
+        if methode == "POST" and action == "modele":
+            corps = self._corps()
+            if not (corps.get("nom") or "").strip():
+                raise Erreur("Donnez un nom au modèle.")
+            with db.dans(cle):
+                modele = modeles_mission.depuis_mission(corps["nom"], corps.get("description") or "", corps.get("anonymiser", True) is not False)
+            return modeles_mission.enregistrer(modele)
         if methode == "PUT" and action == "ouvrir":
             db.marquer_derniere(cle)
             return {"ok": True}

@@ -407,8 +407,16 @@ function remplirChoixMission() {
 }
 
 // Création guidée : la fiche de départ et, au besoin, le cadre repris d'une mission existante.
-function dialogueNouvelleMission() {
+const resumeModele = m => {
+  const c = m.contenu, parts = [[c.acteurs, "acteurs"], [c.instances, "réunions"], [c.profils, "profils"], [c.lots, "lots"],
+    [c.jalons, "jalons"], [c.hypotheses, "hypothèses"], [c.risques, "risques"], [c.blocs, "blocs de chiffrage"]];
+  return parts.filter(([n]) => n).map(([n, l]) => `${n} ${l}`).join(" · ");
+};
+
+async function dialogueNouvelleMission(modeleChoisi) {
   const d = $("#dialogue");
+  let modeles = [];
+  try { modeles = await api("GET", "modeles_mission"); } catch (e) { /* création sans modèle */ }
   const champ = (cle, lib, type = "text", attrs = {}) => {
     const i = el(type === "long" ? "textarea" : "input", { name: cle, type: type === "long" ? null : type, ...attrs });
     return [el("label", { class: type === "long" ? "large" : "" }, lib, i), i];
@@ -422,12 +430,26 @@ function dialogueNouvelleMission() {
   const [lPilote, pilote] = champ("porteur_projet", "Porteur projet (pilote)");
   const [lSprint, sprint] = champ("duree_sprint_jours", "Durée d'un sprint (jours, si agile)", "number", { min: 1 });
   sprint.value = 14;
+  const [lDebut, debut] = champ("date_debut", "Date de début (les dates du modèle en partent)", "date");
+  debut.value = new Date().toISOString().slice(0, 10);
   const source = el("select", {}, el("option", { value: "" }, "Partir de zéro"),
-    etat.missions.map(m => el("option", { value: m.cle, selected: m.cle === etat.mission && m.cle !== "demo" }, "Reprendre le cadre de : " + m.nom)));
+    modeles.length ? el("optgroup", { label: "Modèles de mission : cadre et squelette" },
+      modeles.map(m => el("option", { value: "modele:" + m.cle, selected: m.cle === modeleChoisi }, `Modèle : ${m.nom}${m.origine === "personnel" ? " (personnel)" : ""}`))) : null,
+    el("optgroup", { label: "Reprendre le cadre d'une mission" },
+      etat.missions.map(m => el("option", { value: "mission:" + m.cle }, "Reprendre le cadre de : " + m.nom))));
+  const infoModele = el("div", { class: "carte", style: "font-size:14px" });
   const cases = Object.entries(etat.reprises || {}).map(([cle, lib]) =>
     el("label", { class: "case", style: "font-size:14px" }, el("input", { type: "checkbox", value: cle, checked: cle !== "raci" }), lib));
   const zoneReprise = el("div", { class: "personnes", style: "max-height:none" }, cases);
-  const majReprise = () => { zoneReprise.style.display = source.value ? "" : "none"; };
+  const majReprise = () => {
+    const [genre, cle] = source.value.split(":");
+    zoneReprise.style.display = genre === "mission" ? "" : "none";
+    const m = genre === "modele" && modeles.find(x => x.cle === cle);
+    infoModele.style.display = lDebut.style.display = m ? "" : "none";
+    if (m) infoModele.replaceChildren(el("b", {}, m.nom), el("div", { style: "color:var(--doux);margin:4px 0" }, m.description),
+      el("div", {}, "Contient : " + resumeModele(m) + "."),
+      el("div", { style: "color:var(--doux);font-size:13px;margin-top:4px" }, "Les personnes sont des rôles à renommer ; jalons et activités sont datés depuis la date de début ; le chiffrage macro est prérempli."));
+  };
   source.addEventListener("change", majReprise);
   d.replaceChildren(el("form", { method: "dialog", onsubmit: async e => {
     e.preventDefault();
@@ -435,9 +457,12 @@ function dialogueNouvelleMission() {
     const fiche = { nom: nom.value, client: client.value, date_cible: cible.value, objectif_business: objB.value,
       objectif_projet: objP.value, porteur_projet: pilote.value, duree_sprint_jours: Number(sprint.value) || 14 };
     if (budget.value !== "") fiche.budget_vendu = Number(budget.value);
-    const reprendre = source.value ? [...zoneReprise.querySelectorAll("input:checked")].map(c => c.value) : [];
+    const [genre, cle] = source.value.split(":");
+    if (genre === "modele") fiche.date_debut = debut.value;
+    const reprendre = genre === "mission" ? [...zoneReprise.querySelectorAll("input:checked")].map(c => c.value) : [];
     try {
-      const r = await api("POST", "missions", { fiche, source: source.value || null, reprendre });
+      const r = await api("POST", "missions", { fiche, modele: genre === "modele" ? cle : null,
+        source: genre === "mission" ? cle : null, reprendre });
       await listerMissions(); d.close(); await ouvrirMission(r.cle, "aujourdhui");
       dire("Mission créée : suivez les étapes de démarrage.");
     } catch (err) { dire(err.message, true); }
@@ -445,8 +470,8 @@ function dialogueNouvelleMission() {
     el("h3", {}, "Nouvelle mission"),
     el("p", { class: "aide", style: "margin:0" }, "Le minimum pour démarrer ; le reste se complète ensuite, guidé par la liste « Démarrage de la mission » de la page À traiter."),
     el("div", { class: "champs" }, lNom, lClient, lCible, lBudget, lObjB, lObjP, lPilote, lSprint),
-    el("label", {}, "Point de départ", source), zoneReprise,
-    el("p", { class: "aide", style: "margin:0" }, "Seul le cadre est repris (personnes, réunions, tarifs, responsabilités, paramètres) : aucun risque, jalon, chiffrage ni donnée de suivi."),
+    el("label", {}, "Point de départ", source), infoModele, el("div", { class: "champs" }, lDebut), zoneReprise,
+    el("p", { class: "aide", style: "margin:0" }, "Un modèle apporte le cadre et un squelette (lots, jalons, hypothèses et risques types, premier chiffrage). Reprendre une mission n'apporte que son cadre (personnes, réunions, tarifs, responsabilités, paramètres), sans aucune donnée de suivi."),
     el("div", { class: "barre" }, el("span", { class: "pousse" }),
       el("button", { type: "button", onclick: () => d.close() }, "Annuler"), el("button", { class: "principal" }, "Créer la mission"))));
   majReprise();
@@ -476,6 +501,17 @@ function dialogueMissions() {
     });
     document.body.append(choix); choix.click(); setTimeout(() => choix.remove(), 60000);
   };
+  const zoneModeles = el("div", {});
+  api("GET", "modeles_mission").then(modeles => zoneModeles.replaceChildren(
+    el("h3", { style: "margin:8px 0 4px" }, "Modèles de mission"),
+    el("div", { class: "cadre-table" }, el("table", {}, el("tbody", {}, modeles.map(x => el("tr", {},
+      el("td", {}, el("b", {}, x.nom), " ", pastille("neutre", x.origine), el("div", { style: "color:var(--doux);font-size:13px" }, resumeModele(x))),
+      el("td", { style: "white-space:nowrap" },
+        el("button", { type: "button", onclick: () => dialogueNouvelleMission(x.cle) }, "Créer une mission"), " ",
+        x.origine === "personnel" && el("button", { type: "button", class: "danger", onclick: async () => {
+          if (!confirm(`Supprimer le modèle « ${x.nom} » ? Les missions déjà créées ne sont pas touchées.`)) return;
+          try { await api("DELETE", `modeles_mission/${x.cle}`); dire("Modèle supprimé."); dialogueMissions(); } catch (e) { dire(e.message, true); }
+        } }, "Supprimer")))))))).catch(() => null));
   const lignes = etat.missions.map(m => el("tr", {},
     el("td", {}, el("b", {}, m.nom), m.client && el("div", { style: "color:var(--doux);font-size:13px" }, m.client),
       m.cle === etat.mission && pastille("vert", "ouverte")),
@@ -483,6 +519,7 @@ function dialogueMissions() {
     el("td", { style: "white-space:nowrap" },
       m.cle !== etat.mission && el("button", { type: "button", onclick: async () => { d.close(); await ouvrirMission(m.cle); } }, "Ouvrir"), " ",
       el("button", { type: "button", title: "Télécharger la mission en un fichier JSON", onclick: e => telechargerFichier(`/api/missions/${m.cle}/export`, e.target) }, "Exporter"), " ",
+      el("button", { type: "button", title: "Réutiliser le cadre et le squelette de cette mission pour les prochaines", onclick: () => dialogueEnregistrerModele(m) }, "Modèle"), " ",
       el("button", { type: "button", class: "danger", onclick: async () => {
         if (!confirm(`Mettre la mission « ${m.nom} » à la corbeille ?\nLe fichier est déplacé dans missions/corbeille et peut y être récupéré.`)) return;
         try {
@@ -496,6 +533,7 @@ function dialogueMissions() {
     el("h3", {}, "Missions"),
     el("p", { class: "aide", style: "margin:0" }, "Chaque mission est un fichier séparé. L'export produit un fichier JSON lisible (données et historique) qui se réimporte ici, comme nouvelle mission."),
     el("div", { class: "cadre-table" }, el("table", {}, el("tbody", {}, lignes))),
+    zoneModeles,
     el("div", { class: "barre" },
       el("button", { class: "principal" }, "Nouvelle mission…"),
       el("button", { type: "button", onclick: importer }, "Importer un fichier…"),
@@ -511,6 +549,27 @@ function dialogueMissions() {
   if (!d.open) d.showModal();
 }
 
+function dialogueEnregistrerModele(m) {
+  const d = $("#dialogue"), nom = el("input", { required: true }), description = el("textarea"),
+    anonymiser = el("input", { type: "checkbox", checked: true });
+  nom.value = "Modèle — " + m.nom;
+  d.replaceChildren(el("form", { method: "dialog", onsubmit: async e => {
+    e.preventDefault();
+    try {
+      const r = await api("POST", `missions/${m.cle}/modele`, { nom: nom.value, description: description.value, anonymiser: anonymiser.checked });
+      d.close(); dire(`Modèle enregistré : ${resumeModele(r)}. Il est proposé à la création d'une mission.`);
+    } catch (err) { dire(err.message, true); }
+  } },
+    el("h3", {}, "Enregistrer comme modèle : " + m.nom),
+    el("p", { class: "aide", style: "margin:0" }, "Repris : organisation, gouvernance, profils et TJM, RACI, paramètres du chiffrage ; lots et prérequis, jalons et activités en dates relatives, hypothèses et risques types, story map, blocs de chiffrage utilisés. Jamais repris : nom, client, budget, attentes, décisions, sprints, temps passés."),
+    el("label", {}, "Nom du modèle", nom), el("label", {}, "À quoi sert ce modèle", description),
+    el("label", { class: "case" }, anonymiser, "Anonymiser : les personnes deviennent leur rôle, sans e-mail"),
+    el("p", { class: "aide", style: "margin:0" }, "Les textes des risques, hypothèses et prérequis sont repris tels quels : relisez-les si la mission contient des informations confidentielles."),
+    el("div", { class: "barre" }, el("span", { class: "pousse" }),
+      el("button", { type: "button", onclick: () => dialogueMissions() }, "Retour"), el("button", { class: "principal" }, "Enregistrer le modèle"))));
+  if (!d.open) d.showModal();
+}
+
 async function demarrer() {
   const menu = $("#menu");
   menu.append = ajouter;
@@ -519,7 +578,7 @@ async function demarrer() {
       el("button", { "data-vue": cle, onclick: () => afficher(cle) }, VUES[cle][0])));
   }
   $("#btn-missions").addEventListener("click", dialogueMissions);
-  $("#btn-nouvelle").addEventListener("click", dialogueNouvelleMission);
+  $("#btn-nouvelle").addEventListener("click", () => dialogueNouvelleMission());
   $("#choix-mission").addEventListener("change", e => {
     if (e.target.value === "+nouvelle") { remplirChoixMission(); dialogueNouvelleMission(); return; }
     ouvrirMission(e.target.value);

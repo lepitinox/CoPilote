@@ -25,6 +25,7 @@ import agenda  # noqa: E402
 import pilote  # noqa: E402
 import catalogue  # noqa: E402
 import changements  # noqa: E402
+import modeles_mission  # noqa: E402
 import db  # noqa: E402
 import donnees  # noqa: E402
 import finances  # noqa: E402
@@ -407,18 +408,39 @@ def proposer_creneaux(tout: bool = False, mission: str | None = None) -> dict[st
 
 
 @serveur.tool(annotations=ECRITURE)
-def creer_mission(nom: str, client: str = "", fiche: dict[str, Any] | None = None,
+def creer_mission(nom: str, client: str = "", fiche: dict[str, Any] | None = None, modele: str | None = None,
                   reprendre_de: str | None = None, reprendre: list[str] | None = None) -> dict[str, Any]:
     """Crée une mission et renvoie sa clé. fiche : autres champs de la fiche (objectif_business,
-    objectif_solution, objectif_projet, porteurs, date_cible, duree_sprint_jours, budget_vendu…).
-    reprendre_de : clé d'une mission existante dont reprendre le cadre ; reprendre : parties parmi
-    organisation, gouvernance, profils, raci, chiffrage."""
+    objectif_solution, objectif_projet, porteurs, date_debut, date_cible, duree_sprint_jours, budget_vendu…).
+    modele : clé d'un modèle de mission (voir lister_modeles_mission) — cadre et squelette, dates
+    calculées depuis fiche.date_debut. Sinon reprendre_de : clé d'une mission existante dont reprendre
+    le cadre ; reprendre : parties parmi organisation, gouvernance, profils, raci, chiffrage."""
     try:
-        cle = db.creer_mission_complete({**(fiche or {}), "nom": nom, "client": client}, reprendre_de, reprendre or [])
+        cle = db.creer_mission_complete({**(fiche or {}), "nom": nom, "client": client}, reprendre_de, reprendre or [], modele)
     except (ValueError, db.Introuvable) as e:
         raise ToolError(str(e)) from None
     with db.dans(cle):
         return {"cle": cle, "demarrage": pilote.demarrage()}
+
+
+@serveur.tool(annotations=LECTURE)
+def lister_modeles_mission() -> dict[str, Any]:
+    """Modèles de mission (fournis et personnels) : description et contenu (acteurs, instances, profils,
+    lots, jalons, hypothèses, risques, blocs de chiffrage)."""
+    return {"modeles": modeles_mission.lister()}
+
+
+@serveur.tool(annotations=ECRITURE)
+def enregistrer_modele_mission(nom: str, description: str = "", anonymiser: bool = True,
+                               mission: str | None = None) -> dict[str, Any]:
+    """Enregistre la mission comme modèle réutilisable : cadre et squelette, dates en relatif.
+    anonymiser (par défaut) : les personnes deviennent leur rôle, sans e-mail."""
+    with _sur(mission):
+        modele = modeles_mission.depuis_mission(nom, description, anonymiser)
+    try:
+        return modeles_mission.enregistrer(modele)
+    except ValueError as e:
+        raise ToolError(str(e)) from None
 
 
 @serveur.tool(annotations=LECTURE)
