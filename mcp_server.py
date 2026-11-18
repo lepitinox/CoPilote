@@ -407,11 +407,26 @@ def proposer_creneaux(tout: bool = False, mission: str | None = None) -> dict[st
 
 
 @serveur.tool(annotations=ECRITURE)
-def creer_mission(nom: str, client: str = "") -> dict[str, Any]:
-    """Crée une mission vide et renvoie sa clé."""
-    if not nom.strip():
-        raise ToolError("Le nom de la mission est obligatoire.")
-    return {"cle": db.creer_mission(nom, client)}
+def creer_mission(nom: str, client: str = "", fiche: dict[str, Any] | None = None,
+                  reprendre_de: str | None = None, reprendre: list[str] | None = None) -> dict[str, Any]:
+    """Crée une mission et renvoie sa clé. fiche : autres champs de la fiche (objectif_business,
+    objectif_solution, objectif_projet, porteurs, date_cible, duree_sprint_jours, budget_vendu…).
+    reprendre_de : clé d'une mission existante dont reprendre le cadre ; reprendre : parties parmi
+    organisation, gouvernance, profils, raci, chiffrage."""
+    try:
+        cle = db.creer_mission_complete({**(fiche or {}), "nom": nom, "client": client}, reprendre_de, reprendre or [])
+    except (ValueError, db.Introuvable) as e:
+        raise ToolError(str(e)) from None
+    with db.dans(cle):
+        return {"cle": cle, "demarrage": pilote.demarrage()}
+
+
+@serveur.tool(annotations=LECTURE)
+def demarrage_mission(mission: str | None = None) -> dict[str, Any]:
+    """Étapes de cadrage d'une mission (fiche, lots, jalons, organisation, gouvernance, hypothèses,
+    chiffrage ou budget, attentes, risques) et ce qu'il reste à faire."""
+    with _sur(mission):
+        return pilote.demarrage()
 
 
 # ---------------------------------------------------------------- ressources

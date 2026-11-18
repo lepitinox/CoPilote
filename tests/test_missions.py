@@ -38,6 +38,47 @@ class Missions(unittest.TestCase):
             db.chemin_de("../evasion")
 
 
+class CreationGuidee(unittest.TestCase):
+    def test_fiche_et_reprise_du_cadre(self):
+        import agenda
+        import pilote
+        source = db.creer_mission("Modèle")
+        with db.dans(source):
+            demo.charger(AUJ)
+            agenda.proposer(True, AUJ)
+        cle = db.creer_mission_complete({"nom": "Nouvelle", "client": "ACME", "date_cible": "2027-06-30",
+                                         "budget_vendu": 100000, "objectif_business": "Vendre en ligne"},
+                                        source, ["organisation", "gouvernance", "profils"])
+        with db.dans(cle):
+            m = db.mission()
+            self.assertEqual((m["client"], m["date_cible"], m["budget_vendu"]), ("ACME", "2027-06-30", 100000))
+            with db.dans(source):
+                attendu = {t: len(db.lister(t)) for t in ("acteur", "instance", "profil")}
+            self.assertEqual({t: len(db.lister(t)) for t in ("acteur", "instance", "profil")}, attendu)
+            self.assertEqual([len(db.lister(t)) for t in ("risque", "jalon", "raci", "attente")], [0, 0, 0, 0])
+            self.assertTrue(all(i["premiere"] is None for i in db.lister("instance")))  # créneaux à reposer
+            self.assertEqual(sum(p["raf_jours"] for p in db.lister("profil")), 0)
+            self.assertEqual(db.journal(), [])
+            d = pilote.demarrage()
+            self.assertEqual({e["cle"] for e in d["etapes"] if e["fait"]}, {"organisation", "budget"})
+
+    def test_reprise_sans_organisation_nettoie_les_references(self):
+        source = db.creer_mission("Modèle 2")
+        with db.dans(source):
+            demo.charger(AUJ)
+        cle = db.creer_mission_complete({"nom": "Sans orga"}, source, ["gouvernance", "raci"])
+        with db.dans(cle):
+            self.assertTrue(all(i["participants_ids"] == "[]" for i in db.lister("instance")))
+            self.assertFalse(any(k.startswith("acteur:") for k in db.mission()["raci_roles"]))
+
+    def test_refus(self):
+        with self.assertRaises(ValueError):
+            db.creer_mission_complete({"nom": " "})
+        with self.assertRaises(ValueError):
+            db.creer_mission_complete({"nom": "X"}, db.creer_mission("Y"), ["inconnue"])
+        self.assertFalse(db.existe("x"))  # rien laissé derrière un échec
+
+
 class Historique(unittest.TestCase):
     def setUp(self):
         self.cle = db.creer_mission("Historique")
@@ -150,6 +191,11 @@ class Api(unittest.TestCase):
         code, r = self.appel("POST", "/api/missions", {"nom": "Par l'API", "client": "X"})
         self.assertEqual(code, 200)
         cle = r["cle"]
+        code, r = self.appel("POST", "/api/missions", {"fiche": {"nom": "Guidée", "date_cible": "2027-01-31"},
+                                                       "source": cle, "reprendre": ["profils"]})
+        self.assertEqual(code, 200)
+        code, t = self.appel("GET", "/api/a_traiter", mission=r["cle"])
+        self.assertEqual((code, t["demarrage"]["total"]), (200, 9))
         code, _ = self.appel("POST", "/api/jalon", {"libelle": "J1"}, mission=cle)
         self.assertEqual(code, 200)
         code, hist = self.appel("GET", "/api/journal?cible=jalon", mission=cle)

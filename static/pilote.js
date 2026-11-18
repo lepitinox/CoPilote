@@ -11,9 +11,18 @@ const GENRES = { action: "Action", decision: "Décision", risque: "Risque", jalo
   hypothese: "Hypothèse", prerequis: "Prérequis", changement: "Changement" };
 
 VUES.aujourdhui = ["À traiter", AUJOURDHUI, async v => {
-  const t = await api("GET", "a_traiter");
+  const t = await api("GET", "a_traiter"), dem = t.demarrage;
   v.append(titreVue("À traiter",
     "Ce que la mission attend de vous, du plus urgent au moins urgent. Chaque ligne s'ouvre d'un clic ; les boutons agissent directement et chaque action est inscrite à l'historique."));
+  if (dem.faites < dem.total) {
+    v.append(el("details", { class: "carte", open: dem.faites < dem.total - 2, style: "margin-bottom:16px" },
+      el("summary", { style: "cursor:pointer;font-weight:600" }, `Démarrage de la mission : ${dem.faites} / ${dem.total} étapes posées`),
+      el("p", { class: "aide", style: "margin:8px 0" }, "Ce qu'il faut poser pour que le co-pilote puisse calculer le délai, le budget et la satisfaction du client, et vous alerter."),
+      el("div", { class: "liste" }, dem.etapes.map(e => el("div", { class: "item", style: e.fait ? "opacity:.6" : "" },
+        el("div", { class: "tete" }, pastille(e.fait ? "vert" : "neutre", e.fait ? "✓ fait" : "à faire"), el("span", { class: "titre" }, e.titre),
+          !e.fait && el("button", { style: "margin-left:auto", onclick: () => afficher(e.vue) }, "Y aller")),
+        !e.fait && el("div", { class: "detail" }, e.aide))))));
+  }
   v.append(el("div", { class: "grille" }, Object.entries(GROUPES_A_TRAITER).map(([g, [lib]]) =>
     tuile(lib, nb(t.compte[g]), g === "maintenant" && t.compte[g] ? pastille("rouge", "à traiter en priorité") : ""))));
   if (!t.items.length) { v.append(el("div", { class: "vide", style: "margin-top:16px" }, "Rien à traiter : la mission est à jour.")); return; }

@@ -14,9 +14,16 @@ pip install -r requirements.txt
 python server.py
 ```
 
-Puis ouvrir http://127.0.0.1:8765. Le bouton « Missions » crée, importe, exporte ou met à la
-corbeille une mission ; « Charger la démo » y ouvre une mission fictive, dans sa propre mission
-`demo`.
+Puis ouvrir http://127.0.0.1:8765.
+
+- **« + Nouvelle mission »** (en-tête, ou dernière ligne du sélecteur de mission) : nom, client,
+  date cible, budget vendu, objectifs, pilote et durée de sprint ; au besoin, reprise du cadre
+  d'une mission existante — organisation, gouvernance (créneaux à reposer), profils et TJM,
+  RACI, paramètres du chiffrage — sans aucune donnée de suivi. La mission s'ouvre sur la liste
+  « Démarrage de la mission » (page À traiter) : fiche, lots, jalons, organisation, gouvernance,
+  hypothèses, chiffrage ou budget, attentes, risques, chacune avec son raccourci.
+- **« Missions »** : ouvrir, importer, exporter ou mettre à la corbeille une mission ; « Charger
+  la démo » ouvre une mission fictive, dans sa propre mission `demo`.
 Le serveur n'écoute que sur la machine locale.
 
 `python-pptx` et `openpyxl` servent aux exports ; `anthropic` aux fonctions LLM ; `mcp` au serveur MCP. Sans clé
@@ -63,7 +70,8 @@ Ce que l'assistant peut faire :
   `synthese`, `lister_elements` (avec recherche), `lire_element`, `suivi_risques`, `chiffrage`,
   `budget`, `attentes_client`, `gouvernance`, `historique`, `exporter_mission`.
 - **Écrire** : `creer_element`, `modifier_element`, `supprimer_element`, `modifier_fiche_mission`,
-  `annuler_modification`, `proposer_creneaux`, `creer_mission`, `chiffrer_avec_bloc`
+  `annuler_modification`, `proposer_creneaux`, `creer_mission` (avec reprise du cadre d'une
+  mission), `demarrage_mission`, `chiffrer_avec_bloc`
   (avec `catalogue_chiffrage`, `a_traiter`, `preparer_seance` et `glissements` en lecture).
 - **Demandes de changement** : `suivi_changements` (lecture), `creer_changement`,
   `chiffrer_changement`, `presenter_changement`, `decider_changement`.

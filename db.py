@@ -306,6 +306,74 @@ def creer_mission(nom, client=""):
     return cle
 
 
+# Ce qu'une nouvelle mission peut reprendre d'une mission existante (le cadre, pas le contenu).
+REPRISES = {
+    "organisation": "Organisation : métiers et acteurs",
+    "gouvernance": "Gouvernance : instances et participants (créneaux à reposer)",
+    "profils": "Profils et TJM (reste à faire remis à zéro)",
+    "raci": "RACI : activités, colonnes et attributions",
+    "chiffrage": "Paramètres du chiffrage (abaque, marges, majorations)",
+}
+
+
+def reprendre(source, parties):
+    """Copie dans la mission courante une partie du cadre de la mission `source`.
+
+    Les identifiants sont conservés, pour que participants et colonnes du RACI restent valides ;
+    ce qui pointe vers une partie non reprise est retiré."""
+    if not existe(source):
+        raise Introuvable("Mission modèle introuvable.")
+    inconnues = set(parties) - set(REPRISES)
+    if inconnues:
+        raise ValueError("Reprise inconnue : " + ", ".join(sorted(inconnues)) + ".")
+    with dans(source):
+        lu = {t: lister(t) for t in ("metier", "acteur", "instance", "profil", "raci")}
+        m_source = mission()
+    acteurs = {a["id"] for a in lu["acteur"]} if "organisation" in parties else set()
+    with connexion() as c:
+        def copier(table, lignes, ajuster=lambda l: l):
+            c.execute(f"DELETE FROM {table}")
+            for l in lignes:
+                d = {k: v for k, v in ajuster(dict(l)).items() if k == "id" or k in TABLES[table]}
+                c.execute(f"INSERT INTO {table} ({', '.join(d)}) VALUES ({', '.join('?' for _ in d)})", tuple(d.values()))
+        if "organisation" in parties:
+            copier("metier", lu["metier"])
+            copier("acteur", lu["acteur"])
+        if "gouvernance" in parties:
+            copier("instance", lu["instance"], lambda i: {
+                **i, "premiere": None, "heure": None,
+                "participants_ids": json.dumps([x for x in ids(i.get("participants_ids")) if x in acteurs])})
+        if "profils" in parties:
+            copier("profil", lu["profil"], lambda p: {**p, "raf_jours": 0})
+        if "raci" in parties:
+            garder = lambda cle: not cle.startswith("acteur:") or int(cle.split(":")[1]) in acteurs
+            copier("raci", lu["raci"], lambda r: {**r, "valeurs": json.dumps(
+                {k: v for k, v in valeurs_raci(r).items() if garder(k)}, ensure_ascii=False)})
+            c.execute("UPDATE mission SET raci_roles = ? WHERE id = 1",
+                      (json.dumps([k for k in m_source["raci_roles"] if garder(k)], ensure_ascii=False),))
+        if "chiffrage" in parties:
+            c.execute("UPDATE mission SET chiffrage = ? WHERE id = 1", (json.dumps(m_source["chiffrage"], ensure_ascii=False),))
+
+
+def creer_mission_complete(fiche, source=None, parties=()):
+    """Crée une mission avec sa fiche et, au besoin, le cadre repris d'une mission existante."""
+    nom = (fiche.get("nom") or "").strip()
+    if not nom:
+        raise ValueError("Donnez un nom à la mission.")
+    cle = creer_mission(nom, (fiche.get("client") or "").strip())
+    try:
+        with dans(cle), sans_journal():
+            champs = {k: v for k, v in fiche.items() if k in TABLES["mission"] and k not in ("nom", "client") and v not in (None, "")}
+            if champs:
+                modifier("mission", 1, champs)
+            if source and parties:
+                reprendre(source, list(parties))
+    except Exception:
+        os.remove(chemin_de(cle))
+        raise
+    return cle
+
+
 def supprimer_mission(cle):
     """Met la mission à la corbeille (sous-dossier `corbeille`) : rien n'est effacé."""
     if not existe(cle):

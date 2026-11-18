@@ -190,6 +190,40 @@ def historique_tendance(limite=8):
     return list(reversed(m[:limite]))
 
 
+# ---------------------------------------------------------------- démarrage d'une mission
+
+def demarrage():
+    """Les étapes de cadrage d'une mission et leur état : ce qu'il reste à poser pour la piloter."""
+    m = db.mission()
+    n = lambda t, ou=None: len(db.lister(t, ou)) if ou else len(db.lister(t))
+    instances = db.lister("instance")
+    etapes = [
+        ("fiche", "Fiche mission : objectifs et date cible", "mission",
+         all((m.get(k) or "").strip() for k in ("objectif_business", "objectif_projet")) and bool(m.get("date_cible")),
+         "Objectifs business et projet, porteurs, date cible : la base des trois réponses au sponsor."),
+        ("lots", "Feuille de route : lots et prérequis", "route", n("lot") > 0,
+         "Ce que chaque lot livre, quand, et ce dont il dépend."),
+        ("jalons", "Jalons datés", "planning", n("jalon", "date IS NOT NULL AND date != ''") > 0,
+         "Leur première date devient l'engagement : les reports seront mesurés par rapport à elle."),
+        ("organisation", "Organisation : acteurs et métiers", "organisation", n("acteur") >= 2,
+         "Qui est qui, et qui peut bloquer : utilisé par le RACI et les réunions."),
+        ("gouvernance", "Gouvernance : instances et créneaux", "gouvernance",
+         any(i.get("premiere") and i.get("heure") for i in instances) or any(i.get("recurrence") == "ponctuelle" for i in instances),
+         "Les réunions, leurs participants et leurs créneaux."),
+        ("hypotheses", "Hypothèses du planning et du chiffrage", "mission", n("hypothese") > 0,
+         "Ce sur quoi reposent la date et le budget, avec qui doit les confirmer."),
+        ("budget", "Chiffrage ou budget vendu", "chiffrage",
+         n("estimation", "mode IN ('macro', 'detaille')") > 0 or m.get("budget_vendu") is not None,
+         "Sans référence budgétaire, l'atterrissage n'est pas mesurable."),
+        ("attentes", "Attentes du client", "attentes", n("attente") > 0,
+         "Ce que chaque partie prenante attend : la troisième question du sponsor."),
+        ("risques", "Premiers risques", "risques", n("risque") > 0,
+         "Les risques et adhérences connus dès le cadrage."),
+    ]
+    liste = [{"cle": c, "titre": t, "vue": v, "fait": bool(f), "aide": a} for c, t, v, f, a in etapes]
+    return {"etapes": liste, "faites": sum(1 for e in liste if e["fait"]), "total": len(liste)}
+
+
 # ---------------------------------------------------------------- à traiter
 
 def _item(groupe, genre, titre, detail="", table=None, ident=None, vue=None, actions=()):

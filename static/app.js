@@ -397,13 +397,60 @@ const MEMO_MISSION = "copilote.mission";
 function memoriser(cle) { try { localStorage.setItem(MEMO_MISSION, cle); } catch (e) { /* sans importance */ } }
 async function listerMissions() {
   const r = await api("GET", "missions");
-  etat.missions = r.missions;
+  etat.missions = r.missions; etat.reprises = r.reprises;
   return r;
 }
 function remplirChoixMission() {
   const s = $("#choix-mission");
   s.replaceChildren(...etat.missions.map(m => el("option", { value: m.cle, selected: m.cle === etat.mission },
-    m.nom + (m.client ? " — " + m.client : ""))));
+    m.nom + (m.client ? " — " + m.client : ""))), el("option", { value: "+nouvelle" }, "+ Nouvelle mission…"));
+}
+
+// Création guidée : la fiche de départ et, au besoin, le cadre repris d'une mission existante.
+function dialogueNouvelleMission() {
+  const d = $("#dialogue");
+  const champ = (cle, lib, type = "text", attrs = {}) => {
+    const i = el(type === "long" ? "textarea" : "input", { name: cle, type: type === "long" ? null : type, ...attrs });
+    return [el("label", { class: type === "long" ? "large" : "" }, lib, i), i];
+  };
+  const [lNom, nom] = champ("nom", "Nom de la mission *", "text", { required: true });
+  const [lClient, client] = champ("client", "Client");
+  const [lCible, cible] = champ("date_cible", "Date cible", "date");
+  const [lBudget, budget] = champ("budget_vendu", "Budget vendu (€, facultatif)", "number", { step: "any" });
+  const [lObjB, objB] = champ("objectif_business", "Objectif business (ce que le client veut obtenir)", "long");
+  const [lObjP, objP] = champ("objectif_projet", "Objectif projet (date, périmètre, budget)", "long");
+  const [lPilote, pilote] = champ("porteur_projet", "Porteur projet (pilote)");
+  const [lSprint, sprint] = champ("duree_sprint_jours", "Durée d'un sprint (jours, si agile)", "number", { min: 1 });
+  sprint.value = 14;
+  const source = el("select", {}, el("option", { value: "" }, "Partir de zéro"),
+    etat.missions.map(m => el("option", { value: m.cle, selected: m.cle === etat.mission && m.cle !== "demo" }, "Reprendre le cadre de : " + m.nom)));
+  const cases = Object.entries(etat.reprises || {}).map(([cle, lib]) =>
+    el("label", { class: "case", style: "font-size:14px" }, el("input", { type: "checkbox", value: cle, checked: cle !== "raci" }), lib));
+  const zoneReprise = el("div", { class: "personnes", style: "max-height:none" }, cases);
+  const majReprise = () => { zoneReprise.style.display = source.value ? "" : "none"; };
+  source.addEventListener("change", majReprise);
+  d.replaceChildren(el("form", { method: "dialog", onsubmit: async e => {
+    e.preventDefault();
+    if (!nom.value.trim()) { nom.focus(); return; }
+    const fiche = { nom: nom.value, client: client.value, date_cible: cible.value, objectif_business: objB.value,
+      objectif_projet: objP.value, porteur_projet: pilote.value, duree_sprint_jours: Number(sprint.value) || 14 };
+    if (budget.value !== "") fiche.budget_vendu = Number(budget.value);
+    const reprendre = source.value ? [...zoneReprise.querySelectorAll("input:checked")].map(c => c.value) : [];
+    try {
+      const r = await api("POST", "missions", { fiche, source: source.value || null, reprendre });
+      await listerMissions(); d.close(); await ouvrirMission(r.cle, "aujourdhui");
+      dire("Mission créée : suivez les étapes de démarrage.");
+    } catch (err) { dire(err.message, true); }
+  } },
+    el("h3", {}, "Nouvelle mission"),
+    el("p", { class: "aide", style: "margin:0" }, "Le minimum pour démarrer ; le reste se complète ensuite, guidé par la liste « Démarrage de la mission » de la page À traiter."),
+    el("div", { class: "champs" }, lNom, lClient, lCible, lBudget, lObjB, lObjP, lPilote, lSprint),
+    el("label", {}, "Point de départ", source), zoneReprise,
+    el("p", { class: "aide", style: "margin:0" }, "Seul le cadre est repris (personnes, réunions, tarifs, responsabilités, paramètres) : aucun risque, jalon, chiffrage ni donnée de suivi."),
+    el("div", { class: "barre" }, el("span", { class: "pousse" }),
+      el("button", { type: "button", onclick: () => d.close() }, "Annuler"), el("button", { class: "principal" }, "Créer la mission"))));
+  majReprise();
+  d.showModal(); nom.focus();
 }
 async function ouvrirMission(cle, vue) {
   etat.mission = cle; etat.cr = null; etat.meteo = null; memoriser(cle);
@@ -429,8 +476,6 @@ function dialogueMissions() {
     });
     document.body.append(choix); choix.click(); setTimeout(() => choix.remove(), 60000);
   };
-  const nom = el("input", { placeholder: "Nom de la mission", required: true });
-  const client = el("input", { placeholder: "Client (facultatif)" });
   const lignes = etat.missions.map(m => el("tr", {},
     el("td", {}, el("b", {}, m.nom), m.client && el("div", { style: "color:var(--doux);font-size:13px" }, m.client),
       m.cle === etat.mission && pastille("vert", "ouverte")),
@@ -447,21 +492,12 @@ function dialogueMissions() {
           dire("Mission mise à la corbeille.");
         } catch (e) { dire(e.message, true); }
       } }, "Corbeille"))));
-  d.replaceChildren(el("form", { method: "dialog", onsubmit: async e => {
-    e.preventDefault();
-    if (!nom.value.trim()) { nom.focus(); return; }
-    try {
-      const r = await api("POST", "missions", { nom: nom.value, client: client.value });
-      await listerMissions(); d.close(); await ouvrirMission(r.cle, "mission"); dire("Mission créée : complétez sa fiche.");
-    } catch (err) { dire(err.message, true); }
-  } },
+  d.replaceChildren(el("form", { method: "dialog", onsubmit: e => { e.preventDefault(); dialogueNouvelleMission(); } },
     el("h3", {}, "Missions"),
     el("p", { class: "aide", style: "margin:0" }, "Chaque mission est un fichier séparé. L'export produit un fichier JSON lisible (données et historique) qui se réimporte ici, comme nouvelle mission."),
     el("div", { class: "cadre-table" }, el("table", {}, el("tbody", {}, lignes))),
-    el("h3", { style: "margin-top:8px" }, "Nouvelle mission"),
-    el("div", { class: "champs" }, nom, client),
     el("div", { class: "barre" },
-      el("button", { class: "principal" }, "Créer"),
+      el("button", { class: "principal" }, "Nouvelle mission…"),
       el("button", { type: "button", onclick: importer }, "Importer un fichier…"),
       el("button", { type: "button", title: "Mission fictive, dans sa propre mission « demo »", onclick: async e => {
         if (etat.missions.some(m => m.cle === "demo") && !confirm("Réinitialiser la mission de démonstration ?")) return;
@@ -483,7 +519,11 @@ async function demarrer() {
       el("button", { "data-vue": cle, onclick: () => afficher(cle) }, VUES[cle][0])));
   }
   $("#btn-missions").addEventListener("click", dialogueMissions);
-  $("#choix-mission").addEventListener("change", e => ouvrirMission(e.target.value));
+  $("#btn-nouvelle").addEventListener("click", dialogueNouvelleMission);
+  $("#choix-mission").addEventListener("change", e => {
+    if (e.target.value === "+nouvelle") { remplirChoixMission(); dialogueNouvelleMission(); return; }
+    ouvrirMission(e.target.value);
+  });
   const depart = location.hash.slice(1);
   try {
     const r = await listerMissions();

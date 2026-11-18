@@ -356,7 +356,7 @@ class Requete(BaseHTTPRequestHandler):
             if nom == "suivi_changements":
                 return changements.suivi(aujourdhui())
             if nom == "a_traiter":
-                return pilote.a_traiter(aujourdhui())
+                return {**pilote.a_traiter(aujourdhui()), "demarrage": pilote.demarrage()}
             if nom == "glissements":
                 return pilote.glissements(aujourdhui())
             if nom == "chiffrage":
@@ -488,13 +488,14 @@ class Requete(BaseHTTPRequestHandler):
         reste = chemin[len("/api/missions"):].strip("/")
         if not reste:
             if methode == "GET":
-                return {"missions": db.missions(), "derniere": db.derniere()}
+                return {"missions": db.missions(), "derniere": db.derniere(), "reprises": db.REPRISES}
             if methode == "POST":
                 corps = self._corps()
-                nom = (corps.get("nom") or "").strip()
-                if not nom:
-                    raise Erreur("Donnez un nom à la mission.")
-                cle = db.creer_mission(nom, (corps.get("client") or "").strip())
+                try:
+                    cle = db.creer_mission_complete(corps.get("fiche") or {"nom": corps.get("nom"), "client": corps.get("client")},
+                                                    corps.get("source"), corps.get("reprendre") or [])
+                except ValueError as e:
+                    raise Erreur(str(e))
                 db.marquer_derniere(cle)
                 return {"cle": cle}
         if reste == "importer" and methode == "POST":
