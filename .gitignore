@@ -3,3 +3,4 @@ copilote.db.*
 missions/
 __pycache__/
 modeles/
+.env

@@ -1,0 +1,19 @@
+services:
+  copilote:
+    build: .
+    image: copilote:local
+    container_name: copilote
+    init: true
+    restart: unless-stopped
+    ports:
+      # Boucle locale uniquement : l'application n'a pas d'authentification.
+      - "127.0.0.1:${COPILOTE_PORT_HOTE:-8770}:8765"
+    env_file:
+      # Facultatif : ANTHROPIC_API_KEY=..., COPILOTE_MODELE=...
+      - path: .env
+        required: false
+    volumes:
+      - copilote-data:/data
+
+volumes:
+  copilote-data:

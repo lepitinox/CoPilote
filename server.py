@@ -23,6 +23,7 @@ import llm  # noqa: E402
 import pilote  # noqa: E402
 import meteo  # noqa: E402
 
+HOTE = os.environ.get("COPILOTE_HOST", "127.0.0.1")  # 0.0.0.0 dans le conteneur
 PORT = int(os.environ.get("COPILOTE_PORT", "8765"))
 STATIQUE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 PAGE = os.path.join(STATIQUE, "index.html")
@@ -564,4 +565,4 @@ class Requete(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     db.demarrer()
     print(f"Co-pilote de mission : http://127.0.0.1:{PORT}  (Ctrl+C pour arrêter)")
-    ThreadingHTTPServer(("127.0.0.1", PORT), Requete).serve_forever()
+    ThreadingHTTPServer((HOTE, PORT), Requete).serve_forever()

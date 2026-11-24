@@ -430,10 +430,12 @@ async function entete() {
     Object.assign(fiche, { nom: m.nom, client: m.client || "" }); remplirChoixMission();
   }
   const l = $("#etat-llm");
-  l.textContent = e.sdk_installe ? "Modèle : " + e.modele : "Modèle non installé";
-  l.title = e.sdk_installe ? (e.cle_presente ? "Clé d'API détectée." : "Aucune clé d'API dans l'environnement : les fonctions de rédaction peuvent échouer.")
-    : "Sans le paquet anthropic, l'extraction est indisponible et la météo est générée sans rédaction.";
-  l.className = "pastille " + (e.sdk_installe && e.cle_presente ? "vert" : "orange");
+  const dispo = e.sdk_installe && e.cle_presente;
+  l.textContent = dispo ? "Modèle : " + e.modele : "Pas de LLM disponible";
+  l.title = dispo ? "Clé d'API détectée."
+    : !e.sdk_installe ? "Le paquet « anthropic » n'est pas installé."
+    : "Aucune clé d'API (ANTHROPIC_API_KEY) dans l'environnement : les fonctions LLM sont indisponibles.";
+  l.className = "pastille " + (dispo ? "vert" : "orange");
 }
 
 // ---------- missions : choix, création, import, export, corbeille ----------

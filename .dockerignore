@@ -1,0 +1,11 @@
+.git
+.gitignore
+.env
+.env.*
+.dockerignore
+Dockerfile
+compose.yaml
+**/__pycache__
+copilote.db*
+missions
+modeles
